@@ -4,6 +4,7 @@ import * as React from "react";
 import { Plus, Trash2 } from "lucide-react";
 
 import { useLoan, useDeleteLoanPayment } from "@/hooks/use-loans";
+import { useLookups } from "@/hooks/use-lookups";
 import { useCurrency } from "@/hooks/use-settings";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { LOAN_STATUS_LABELS, LOAN_TYPE_LABELS } from "@/lib/labels";
@@ -34,6 +35,7 @@ export function LoanDetailSheet({
 }: LoanDetailSheetProps) {
   const loanQuery = useLoan(open ? loanId : undefined);
   const deletePayment = useDeleteLoanPayment();
+  const { accountName } = useLookups();
   const currency = useCurrency();
   const [paymentOpen, setPaymentOpen] = React.useState(false);
 
@@ -81,6 +83,12 @@ export function LoanDetailSheet({
                 </div>
               </div>
 
+              {loan.accountId ? (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {loan.type === "lent" ? "Paid from" : "Received in"}:{" "}
+                  {accountName(loan.accountId)}
+                </p>
+              ) : null}
               {loan.interestRate ? (
                 <p className="mt-2 text-sm text-muted-foreground">
                   Interest rate: {loan.interestRate}%

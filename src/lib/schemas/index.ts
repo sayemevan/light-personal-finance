@@ -36,6 +36,25 @@ export const loanTypeSchema = z.enum(["borrowed", "lent"]);
 export const loanStatusSchema = z.enum(["active", "settled", "overdue"]);
 export const loanPaymentDirectionSchema = z.enum(["payment", "receipt"]);
 
+export const investmentTypeSchema = z.enum([
+  "stocks",
+  "mutual_fund",
+  "etf",
+  "crypto",
+  "fixed_deposit",
+  "gold",
+  "custom",
+]);
+
+export const assetCategorySchema = z.enum([
+  "house",
+  "land",
+  "vehicle",
+  "jewelry",
+  "electronics",
+  "other",
+]);
+
 export const createExpenseSchema = z.object({
   date: isoDate,
   amount,
@@ -79,6 +98,7 @@ export const updateCategorySchema = createCategorySchema
 export const createLoanSchema = z.object({
   type: loanTypeSchema,
   person: z.string().trim().min(1).max(120),
+  accountId: z.string().min(1, "Select an account"),
   principal: amount,
   interestRate: z.coerce.number().min(0).max(1000).optional(),
   borrowDate: isoDate,
@@ -96,6 +116,33 @@ export const createLoanPaymentSchema = z.object({
   notes: optionalText,
 });
 
+const nonNegativeAmount = z.coerce
+  .number()
+  .finite()
+  .min(0, "Value cannot be negative");
+
+export const createInvestmentSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  type: investmentTypeSchema,
+  purchaseDate: isoDate,
+  amountInvested: amount,
+  currentValue: nonNegativeAmount,
+  accountId: z.string().optional(),
+  notes: optionalText,
+});
+export const updateInvestmentSchema = createInvestmentSchema.partial();
+
+export const createAssetSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  category: assetCategorySchema,
+  purchaseDate: isoDate,
+  purchaseValue: amount,
+  currentValue: nonNegativeAmount,
+  accountId: z.string().optional(),
+  notes: optionalText,
+});
+export const updateAssetSchema = createAssetSchema.partial();
+
 export const listQuerySchema = z.object({
   from: isoDate.optional(),
   to: isoDate.optional(),
@@ -111,4 +158,6 @@ export type CreateAccountInput = z.infer<typeof createAccountSchema>;
 export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
 export type CreateLoanInput = z.infer<typeof createLoanSchema>;
 export type CreateLoanPaymentInput = z.infer<typeof createLoanPaymentSchema>;
+export type CreateInvestmentInput = z.infer<typeof createInvestmentSchema>;
+export type CreateAssetInput = z.infer<typeof createAssetSchema>;
 export type ListQuery = z.infer<typeof listQuerySchema>;

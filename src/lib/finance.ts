@@ -1,7 +1,9 @@
 import type {
   Account,
+  Asset,
   Expense,
   Income,
+  Investment,
   Loan,
   LoanPayment,
   MonthlyPoint,
@@ -22,11 +24,16 @@ function sumBy<T>(items: T[], pick: (item: T) => number): number {
   return items.reduce((total, item) => total + pick(item), 0);
 }
 
-/** Current balance = opening balance + income in − expense out. */
+/**
+ * Current balance = opening balance + income in − expense out − money spent
+ * buying investments/assets that were funded from this account.
+ */
 export function computeAccountBalance(
   account: Account,
   expenses: Expense[],
   income: Income[],
+  investments: Investment[] = [],
+  assets: Asset[] = [],
 ): number {
   const inflow = sumBy(
     income.filter((i) => i.accountId === account.id),
@@ -36,7 +43,21 @@ export function computeAccountBalance(
     expenses.filter((e) => e.accountId === account.id),
     (e) => e.amount,
   );
-  return account.openingBalance + inflow - outflow;
+  const investmentOutflow = sumBy(
+    investments.filter((v) => v.accountId === account.id),
+    (v) => v.amountInvested,
+  );
+  const assetOutflow = sumBy(
+    assets.filter((a) => a.accountId === account.id),
+    (a) => a.purchaseValue,
+  );
+  return (
+    account.openingBalance +
+    inflow -
+    outflow -
+    investmentOutflow -
+    assetOutflow
+  );
 }
 
 /** Total paid so far against a loan (payments for borrowed, receipts for lent). */
@@ -55,6 +76,37 @@ export function computeLoanRemaining(
     : 0;
   const remaining = loan.principal + interest - computeLoanPaid(loan, payments);
   return Math.max(0, Number(remaining.toFixed(2)));
+}
+
+/** Absolute gain/loss given a current value and its cost basis. */
+export function computeGain(currentValue: number, basis: number): number {
+  return Number((currentValue - basis).toFixed(2));
+}
+
+/** Gain expressed as a percentage of the cost basis. */
+export function computeReturnPct(currentValue: number, basis: number): number {
+  if (basis <= 0) return 0;
+  return Number(((computeGain(currentValue, basis) / basis) * 100).toFixed(2));
+}
+
+/** Absolute gain/loss on an investment: current value − amount invested. */
+export function computeInvestmentGain(investment: Investment): number {
+  return computeGain(investment.currentValue, investment.amountInvested);
+}
+
+/** Investment gain expressed as a percentage of the amount invested. */
+export function computeInvestmentReturnPct(investment: Investment): number {
+  return computeReturnPct(investment.currentValue, investment.amountInvested);
+}
+
+/** Absolute gain/loss on an asset: current value − purchase value. */
+export function computeAssetGain(asset: Asset): number {
+  return computeGain(asset.currentValue, asset.purchaseValue);
+}
+
+/** Asset gain expressed as a percentage of the purchase value. */
+export function computeAssetReturnPct(asset: Asset): number {
+  return computeReturnPct(asset.currentValue, asset.purchaseValue);
 }
 
 /** Build an income/expense series for the last `months` calendar months. */

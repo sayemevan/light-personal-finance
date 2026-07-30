@@ -4,6 +4,7 @@ import type { Control, FieldPath, FieldValues } from "react-hook-form";
 
 import {
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -153,6 +154,7 @@ export function SelectField<T extends FieldValues>({
   name,
   label,
   placeholder,
+  description,
   options,
 }: BaseFieldProps<T> & { options: { label: string; value: string }[] }) {
   return (
@@ -179,6 +181,7 @@ export function SelectField<T extends FieldValues>({
               ))}
             </SelectContent>
           </Select>
+          {description ? <FormDescription>{description}</FormDescription> : null}
           <FormMessage />
         </FormItem>
       )}

@@ -10,6 +10,8 @@ import {
   Wallet,
   Tags,
   HandCoins,
+  LineChart,
+  Boxes,
   BarChart3,
   Settings,
 } from "lucide-react";
@@ -25,6 +27,8 @@ const iconMap: Record<NavIcon, LucideIcon> = {
   accounts: Wallet,
   categories: Tags,
   loans: HandCoins,
+  investments: LineChart,
+  assets: Boxes,
   reports: BarChart3,
   settings: Settings,
 };

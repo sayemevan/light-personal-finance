@@ -7,7 +7,9 @@ import { queryKeys } from "@/hooks/keys";
 import type { MonthlyPoint } from "@/types/domain";
 import type {
   AccountSummaryRow,
+  AssetSummary,
   CategorySummaryRow,
+  InvestmentSummary,
   LoanSummary,
 } from "@/types/reports";
 
@@ -37,5 +39,20 @@ export function useLoanSummary() {
   return useQuery({
     queryKey: queryKeys.reports("loan"),
     queryFn: () => api.get<LoanSummary>("/api/reports/loan-summary"),
+  });
+}
+
+export function useInvestmentSummary() {
+  return useQuery({
+    queryKey: queryKeys.reports("investment"),
+    queryFn: () =>
+      api.get<InvestmentSummary>("/api/reports/investment-summary"),
+  });
+}
+
+export function useAssetSummary() {
+  return useQuery({
+    queryKey: queryKeys.reports("asset"),
+    queryFn: () => api.get<AssetSummary>("/api/reports/asset-summary"),
   });
 }

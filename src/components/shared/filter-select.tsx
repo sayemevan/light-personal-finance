@@ -36,7 +36,7 @@ export function FilterSelect({
 }: FilterSelectProps) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className={className ?? "h-9 w-[160px]"}>
+      <SelectTrigger className={className ?? "h-9 w-full sm:w-[160px]"}>
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>

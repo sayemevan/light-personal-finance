@@ -1,8 +1,10 @@
 import "server-only";
 import {
   accountsRepo,
+  assetsRepo,
   expensesRepo,
   incomeRepo,
+  investmentsRepo,
   loansRepo,
   loanPaymentsRepo,
 } from "@/lib/repositories";
@@ -21,21 +23,38 @@ const UPCOMING_LIMIT = 5;
 /** Build the full dashboard payload from the underlying tabs. */
 export async function getDashboardSummary(): Promise<DashboardSummary> {
   const spreadsheetId = await getSpreadsheetId();
-  const [accounts, expenses, income, loans, payments] = await Promise.all([
-    accountsRepo.list(spreadsheetId),
-    expensesRepo.list(spreadsheetId),
-    incomeRepo.list(spreadsheetId),
-    loansRepo.list(spreadsheetId),
-    loanPaymentsRepo.list(spreadsheetId),
-  ]);
+  const [accounts, expenses, income, loans, payments, investments, assets] =
+    await Promise.all([
+      accountsRepo.list(spreadsheetId),
+      expensesRepo.list(spreadsheetId),
+      incomeRepo.list(spreadsheetId),
+      loansRepo.list(spreadsheetId),
+      loanPaymentsRepo.list(spreadsheetId),
+      investmentsRepo.list(spreadsheetId),
+      assetsRepo.list(spreadsheetId),
+    ]);
 
   const currentMonth = monthKey(new Date().toISOString());
   const todayISO = new Date().toISOString().slice(0, 10);
 
   const totalBalance = accounts.reduce(
-    (sum, account) => sum + computeAccountBalance(account, expenses, income),
+    (sum, account) =>
+      sum +
+      computeAccountBalance(account, expenses, income, investments, assets),
     0,
   );
+
+  const investmentValue = investments.reduce(
+    (sum, investment) => sum + investment.currentValue,
+    0,
+  );
+
+  const assetValue = assets.reduce(
+    (sum, asset) => sum + asset.currentValue,
+    0,
+  );
+
+  const netWorth = totalBalance + investmentValue + assetValue;
 
   const monthExpense = expenses
     .filter((e) => monthKey(e.date) === currentMonth)
@@ -92,5 +111,8 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
     recentTransactions,
     upcomingDuePayments,
     monthlySummary: buildMonthlySeries(expenses, income, 6),
+    investmentValue,
+    assetValue,
+    netWorth,
   };
 }

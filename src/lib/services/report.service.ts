@@ -1,9 +1,11 @@
 import "server-only";
 import {
   accountsRepo,
+  assetsRepo,
   categoriesRepo,
   expensesRepo,
   incomeRepo,
+  investmentsRepo,
   loansRepo,
   loanPaymentsRepo,
 } from "@/lib/repositories";
@@ -13,12 +15,25 @@ import {
   computeAccountBalance,
   computeLoanRemaining,
 } from "@/lib/finance";
-import type { MonthlyPoint } from "@/types/domain";
+import {
+  ASSET_CATEGORY_LABELS,
+  INVESTMENT_TYPE_LABELS,
+} from "@/lib/labels";
+import type { AssetCategory, InvestmentType, MonthlyPoint } from "@/types/domain";
 import type {
   AccountSummaryRow,
+  AssetSummary,
+  AssetSummaryRow,
   CategorySummaryRow,
+  InvestmentSummary,
+  InvestmentSummaryRow,
   LoanSummary,
 } from "@/types/reports";
+
+/** Round to 2 decimals, guarding against float noise. */
+function round2(value: number): number {
+  return Number(value.toFixed(2));
+}
 
 /** Shared 12-month income/expense series. */
 async function monthlySeries(months = 12): Promise<MonthlyPoint[]> {
@@ -73,25 +88,42 @@ export async function getCategorySummary(): Promise<CategorySummaryRow[]> {
 
 export async function getAccountSummary(): Promise<AccountSummaryRow[]> {
   const spreadsheetId = await getSpreadsheetId();
-  const [accounts, expenses, income] = await Promise.all([
+  const [accounts, expenses, income, investments, assets] = await Promise.all([
     accountsRepo.list(spreadsheetId),
     expensesRepo.list(spreadsheetId),
     incomeRepo.list(spreadsheetId),
+    investmentsRepo.list(spreadsheetId),
+    assetsRepo.list(spreadsheetId),
   ]);
 
   return accounts.map((account) => {
     const inflow = income
       .filter((i) => i.accountId === account.id)
       .reduce((sum, i) => sum + i.amount, 0);
-    const outflow = expenses
-      .filter((e) => e.accountId === account.id)
-      .reduce((sum, e) => sum + e.amount, 0);
+    // Outflow includes ordinary expenses plus money spent buying
+    // investments/assets that were funded from this account.
+    const outflow =
+      expenses
+        .filter((e) => e.accountId === account.id)
+        .reduce((sum, e) => sum + e.amount, 0) +
+      investments
+        .filter((v) => v.accountId === account.id)
+        .reduce((sum, v) => sum + v.amountInvested, 0) +
+      assets
+        .filter((a) => a.accountId === account.id)
+        .reduce((sum, a) => sum + a.purchaseValue, 0);
     return {
       accountId: account.id,
       name: account.name,
       inflow,
       outflow,
-      balance: computeAccountBalance(account, expenses, income),
+      balance: computeAccountBalance(
+        account,
+        expenses,
+        income,
+        investments,
+        assets,
+      ),
     };
   });
 }
@@ -122,4 +154,78 @@ export async function getLoanSummary(): Promise<LoanSummary> {
   }
 
   return summary;
+}
+
+export async function getInvestmentSummary(): Promise<InvestmentSummary> {
+  const spreadsheetId = await getSpreadsheetId();
+  const investments = await investmentsRepo.list(spreadsheetId);
+
+  const byType = new Map<InvestmentType, InvestmentSummaryRow>();
+  let totalInvested = 0;
+  let currentValue = 0;
+
+  for (const investment of investments) {
+    totalInvested += investment.amountInvested;
+    currentValue += investment.currentValue;
+
+    const row = byType.get(investment.type) ?? {
+      key: investment.type,
+      label: INVESTMENT_TYPE_LABELS[investment.type],
+      invested: 0,
+      currentValue: 0,
+      gain: 0,
+    };
+    row.invested += investment.amountInvested;
+    row.currentValue += investment.currentValue;
+    row.gain = round2(row.currentValue - row.invested);
+    byType.set(investment.type, row);
+  }
+
+  const totalGain = round2(currentValue - totalInvested);
+  return {
+    totalInvested: round2(totalInvested),
+    currentValue: round2(currentValue),
+    totalGain,
+    returnPct: totalInvested > 0 ? round2((totalGain / totalInvested) * 100) : 0,
+    byType: [...byType.values()]
+      .map((row) => ({ ...row, invested: round2(row.invested), currentValue: round2(row.currentValue) }))
+      .sort((a, b) => b.currentValue - a.currentValue),
+  };
+}
+
+export async function getAssetSummary(): Promise<AssetSummary> {
+  const spreadsheetId = await getSpreadsheetId();
+  const assets = await assetsRepo.list(spreadsheetId);
+
+  const byCategory = new Map<AssetCategory, AssetSummaryRow>();
+  let totalPurchase = 0;
+  let currentValue = 0;
+
+  for (const asset of assets) {
+    totalPurchase += asset.purchaseValue;
+    currentValue += asset.currentValue;
+
+    const row = byCategory.get(asset.category) ?? {
+      key: asset.category,
+      label: ASSET_CATEGORY_LABELS[asset.category],
+      purchaseValue: 0,
+      currentValue: 0,
+      gain: 0,
+    };
+    row.purchaseValue += asset.purchaseValue;
+    row.currentValue += asset.currentValue;
+    row.gain = round2(row.currentValue - row.purchaseValue);
+    byCategory.set(asset.category, row);
+  }
+
+  const totalGain = round2(currentValue - totalPurchase);
+  return {
+    totalPurchase: round2(totalPurchase),
+    currentValue: round2(currentValue),
+    totalGain,
+    returnPct: totalPurchase > 0 ? round2((totalGain / totalPurchase) * 100) : 0,
+    byCategory: [...byCategory.values()]
+      .map((row) => ({ ...row, purchaseValue: round2(row.purchaseValue), currentValue: round2(row.currentValue) }))
+      .sort((a, b) => b.currentValue - a.currentValue),
+  };
 }

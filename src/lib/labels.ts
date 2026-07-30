@@ -1,6 +1,8 @@
 import type {
   AccountType,
+  AssetCategory,
   CategoryKind,
+  InvestmentType,
   LoanStatus,
   LoanType,
   PaymentMethod,
@@ -38,6 +40,25 @@ export const LOAN_STATUS_LABELS: Record<LoanStatus, string> = {
   overdue: "Overdue",
 };
 
+export const INVESTMENT_TYPE_LABELS: Record<InvestmentType, string> = {
+  stocks: "Stocks",
+  mutual_fund: "Mutual Fund",
+  etf: "ETF",
+  crypto: "Crypto",
+  fixed_deposit: "Fixed Deposit",
+  gold: "Gold",
+  custom: "Custom",
+};
+
+export const ASSET_CATEGORY_LABELS: Record<AssetCategory, string> = {
+  house: "House",
+  land: "Land",
+  vehicle: "Vehicle",
+  jewelry: "Jewelry",
+  electronics: "Electronics",
+  other: "Other",
+};
+
 /** Build `{ label, value }[]` option lists from a label map. */
 export function toOptions<T extends string>(
   labels: Record<T, string>,
@@ -53,3 +74,5 @@ export const ACCOUNT_TYPE_OPTIONS = toOptions(ACCOUNT_TYPE_LABELS);
 export const PAYMENT_METHOD_OPTIONS = toOptions(PAYMENT_METHOD_LABELS);
 export const LOAN_TYPE_OPTIONS = toOptions(LOAN_TYPE_LABELS);
 export const LOAN_STATUS_OPTIONS = toOptions(LOAN_STATUS_LABELS);
+export const INVESTMENT_TYPE_OPTIONS = toOptions(INVESTMENT_TYPE_LABELS);
+export const ASSET_CATEGORY_OPTIONS = toOptions(ASSET_CATEGORY_LABELS);

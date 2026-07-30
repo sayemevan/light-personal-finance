@@ -4,10 +4,14 @@ import { SHEET_TABS, SHEET_COLUMNS } from "@/config/google";
 import type {
   Account,
   AccountType,
+  Asset,
+  AssetCategory,
   Category,
   CategoryKind,
   Expense,
   Income,
+  Investment,
+  InvestmentType,
   Loan,
   LoanPayment,
   LoanPaymentDirection,
@@ -125,6 +129,7 @@ const loanCodec: RowCodec<Loan> = {
     l.status,
     l.notes ?? "",
     l.createdAt,
+    l.accountId ?? "",
   ],
   fromRow: (r) => ({
     id: cell.str(r[0]),
@@ -137,6 +142,7 @@ const loanCodec: RowCodec<Loan> = {
     status: (cell.str(r[7]) || "active") as LoanStatus,
     notes: cell.optional(r[8]),
     createdAt: cell.str(r[9]),
+    accountId: cell.optional(r[10]),
   }),
 };
 
@@ -158,6 +164,56 @@ const loanPaymentCodec: RowCodec<LoanPayment> = {
     direction: (cell.str(r[4]) || "payment") as LoanPaymentDirection,
     notes: cell.optional(r[5]),
     createdAt: cell.str(r[6]),
+  }),
+};
+
+const investmentCodec: RowCodec<Investment> = {
+  toRow: (v) => [
+    v.id,
+    v.name,
+    v.type,
+    v.purchaseDate,
+    v.amountInvested,
+    v.currentValue,
+    v.notes ?? "",
+    v.createdAt,
+    v.accountId ?? "",
+  ],
+  fromRow: (r) => ({
+    id: cell.str(r[0]),
+    name: cell.str(r[1]),
+    type: (cell.str(r[2]) || "custom") as InvestmentType,
+    purchaseDate: cell.str(r[3]),
+    amountInvested: cell.num(r[4]),
+    currentValue: cell.num(r[5]),
+    notes: cell.optional(r[6]),
+    createdAt: cell.str(r[7]),
+    accountId: cell.optional(r[8]),
+  }),
+};
+
+const assetCodec: RowCodec<Asset> = {
+  toRow: (a) => [
+    a.id,
+    a.name,
+    a.category,
+    a.purchaseDate,
+    a.purchaseValue,
+    a.currentValue,
+    a.notes ?? "",
+    a.createdAt,
+    a.accountId ?? "",
+  ],
+  fromRow: (r) => ({
+    id: cell.str(r[0]),
+    name: cell.str(r[1]),
+    category: (cell.str(r[2]) || "other") as AssetCategory,
+    purchaseDate: cell.str(r[3]),
+    purchaseValue: cell.num(r[4]),
+    currentValue: cell.num(r[5]),
+    notes: cell.optional(r[6]),
+    createdAt: cell.str(r[7]),
+    accountId: cell.optional(r[8]),
   }),
 };
 
@@ -195,4 +251,16 @@ export const loanPaymentsRepo = new SheetRepository<LoanPayment>(
   SHEET_TABS.loanPayments,
   SHEET_COLUMNS[SHEET_TABS.loanPayments].length,
   loanPaymentCodec,
+);
+
+export const investmentsRepo = new SheetRepository<Investment>(
+  SHEET_TABS.investments,
+  SHEET_COLUMNS[SHEET_TABS.investments].length,
+  investmentCodec,
+);
+
+export const assetsRepo = new SheetRepository<Asset>(
+  SHEET_TABS.assets,
+  SHEET_COLUMNS[SHEET_TABS.assets].length,
+  assetCodec,
 );

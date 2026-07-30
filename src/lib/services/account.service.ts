@@ -1,5 +1,11 @@
 import "server-only";
-import { accountsRepo, expensesRepo, incomeRepo } from "@/lib/repositories";
+import {
+  accountsRepo,
+  assetsRepo,
+  expensesRepo,
+  incomeRepo,
+  investmentsRepo,
+} from "@/lib/repositories";
 import { getSpreadsheetId } from "@/lib/google/workspace";
 import { computeAccountBalance } from "@/lib/finance";
 import { generateId } from "@/lib/id";
@@ -9,14 +15,22 @@ import type { CreateAccountInput } from "@/lib/schemas";
 /** List accounts with their computed current balance. */
 export async function listAccounts(): Promise<Account[]> {
   const spreadsheetId = await getSpreadsheetId();
-  const [accounts, expenses, income] = await Promise.all([
+  const [accounts, expenses, income, investments, assets] = await Promise.all([
     accountsRepo.list(spreadsheetId),
     expensesRepo.list(spreadsheetId),
     incomeRepo.list(spreadsheetId),
+    investmentsRepo.list(spreadsheetId),
+    assetsRepo.list(spreadsheetId),
   ]);
   return accounts.map((account) => ({
     ...account,
-    currentBalance: computeAccountBalance(account, expenses, income),
+    currentBalance: computeAccountBalance(
+      account,
+      expenses,
+      income,
+      investments,
+      assets,
+    ),
   }));
 }
 

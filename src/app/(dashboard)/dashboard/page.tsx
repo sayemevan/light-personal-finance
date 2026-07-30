@@ -4,8 +4,11 @@ import Link from "next/link";
 import {
   ArrowDownRight,
   ArrowUpRight,
+  Boxes,
   CalendarClock,
+  Gem,
   HandCoins,
+  LineChart,
   PiggyBank,
   TrendingDown,
   TrendingUp,
@@ -28,6 +31,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { MonthlyChart } from "@/components/charts/monthly-chart";
+import { AllocationChart } from "@/components/charts/allocation-chart";
 
 function DashboardSkeleton() {
   return (
@@ -94,6 +98,58 @@ export default function DashboardPage() {
                 hint="Owed to you"
                 icon={HandCoins}
               />
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-3">
+              <div className="grid gap-4 sm:grid-cols-2 lg:col-span-2 lg:grid-cols-1 xl:grid-cols-3">
+                <StatCard
+                  title="Total investments"
+                  value={formatCurrency(data.investmentValue, currency)}
+                  icon={LineChart}
+                />
+                <StatCard
+                  title="Total assets"
+                  value={formatCurrency(data.assetValue, currency)}
+                  icon={Boxes}
+                />
+                <StatCard
+                  title="Net worth"
+                  value={formatCurrency(data.netWorth, currency)}
+                  hint="Cash + investments + assets"
+                  icon={Gem}
+                />
+              </div>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Net worth allocation</CardTitle>
+                  <CardDescription>
+                    Distribution across cash, investments and assets
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <AllocationChart
+                    currency={currency}
+                    data={[
+                      {
+                        name: "Cash",
+                        value: data.totalBalance,
+                        color: "hsl(221 83% 53%)",
+                      },
+                      {
+                        name: "Investments",
+                        value: data.investmentValue,
+                        color: "hsl(142 71% 45%)",
+                      },
+                      {
+                        name: "Assets",
+                        value: data.assetValue,
+                        color: "hsl(38 92% 50%)",
+                      },
+                    ]}
+                  />
+                </CardContent>
+              </Card>
             </div>
 
             <div className="grid gap-6 lg:grid-cols-3">

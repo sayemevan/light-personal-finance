@@ -28,6 +28,23 @@ export type LoanStatus = "active" | "settled" | "overdue";
 
 export type LoanPaymentDirection = "payment" | "receipt";
 
+export type InvestmentType =
+  | "stocks"
+  | "mutual_fund"
+  | "etf"
+  | "crypto"
+  | "fixed_deposit"
+  | "gold"
+  | "custom";
+
+export type AssetCategory =
+  | "house"
+  | "land"
+  | "vehicle"
+  | "jewelry"
+  | "electronics"
+  | "other";
+
 export interface Account {
   id: string;
   name: string;
@@ -78,6 +95,11 @@ export interface Loan {
   id: string;
   type: LoanType;
   person: string;
+  /**
+   * Account the money moved through: where a borrowed loan was received, or
+   * which account a lent amount was paid from.
+   */
+  accountId?: string;
   principal: number;
   interestRate?: number;
   borrowDate: ISODateString;
@@ -99,6 +121,52 @@ export interface LoanPayment {
   createdAt: ISODateTimeString;
 }
 
+export interface Investment {
+  id: string;
+  name: string;
+  type: InvestmentType;
+  purchaseDate: ISODateString;
+  /** Amount originally invested (cost basis). */
+  amountInvested: number;
+  /** Latest known market value of the holding. */
+  currentValue: number;
+  /**
+   * Optional account the money came from. When set, the invested amount is
+   * deducted from that account's cash balance. When empty, the purchase is
+   * treated as funded by an untracked external source.
+   */
+  accountId?: string;
+  notes?: string;
+  createdAt: ISODateTimeString;
+  /** Derived, not persisted: currentValue − amountInvested. */
+  gain?: number;
+  /** Derived, not persisted: gain as a percentage of amountInvested. */
+  returnPct?: number;
+}
+
+export interface Asset {
+  id: string;
+  name: string;
+  category: AssetCategory;
+  purchaseDate: ISODateString;
+  /** Amount paid to acquire the asset. */
+  purchaseValue: number;
+  /** Latest estimated value of the asset. */
+  currentValue: number;
+  /**
+   * Optional account the money came from. When set, the purchase value is
+   * deducted from that account's cash balance. When empty, the purchase is
+   * treated as funded by an untracked external source.
+   */
+  accountId?: string;
+  notes?: string;
+  createdAt: ISODateTimeString;
+  /** Derived, not persisted: currentValue − purchaseValue. */
+  gain?: number;
+  /** Derived, not persisted: gain as a percentage of purchaseValue. */
+  returnPct?: number;
+}
+
 export interface DashboardSummary {
   totalBalance: number;
   monthExpense: number;
@@ -109,6 +177,12 @@ export interface DashboardSummary {
   moneyLent: number;
   upcomingDuePayments: Loan[];
   monthlySummary: MonthlyPoint[];
+  /** Total current value of all investments. */
+  investmentValue: number;
+  /** Total current estimated value of all assets. */
+  assetValue: number;
+  /** Cash (account balances) + investments + assets. */
+  netWorth: number;
 }
 
 /** A unified view of an expense or income for lists such as "recent". */

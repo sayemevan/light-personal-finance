@@ -21,3 +21,35 @@ export interface LoanSummary {
   outstandingBorrowed: number;
   outstandingLent: number;
 }
+
+export interface InvestmentSummaryRow {
+  key: string;
+  label: string;
+  invested: number;
+  currentValue: number;
+  gain: number;
+}
+
+export interface InvestmentSummary {
+  totalInvested: number;
+  currentValue: number;
+  totalGain: number;
+  returnPct: number;
+  byType: InvestmentSummaryRow[];
+}
+
+export interface AssetSummaryRow {
+  key: string;
+  label: string;
+  purchaseValue: number;
+  currentValue: number;
+  gain: number;
+}
+
+export interface AssetSummary {
+  totalPurchase: number;
+  currentValue: number;
+  totalGain: number;
+  returnPct: number;
+  byCategory: AssetSummaryRow[];
+}

@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 
 import { createLoanSchema, type CreateLoanInput } from "@/lib/schemas";
 import { LOAN_TYPE_OPTIONS, LOAN_STATUS_OPTIONS } from "@/lib/labels";
+import { useLookups } from "@/hooks/use-lookups";
 import { useCreateLoan, useUpdateLoan } from "@/hooks/use-loans";
 import type { Loan } from "@/types/domain";
 import { Form } from "@/components/ui/form";
@@ -40,6 +41,7 @@ export function LoanFormDialog({
   loan,
 }: LoanFormDialogProps) {
   const isEdit = Boolean(loan);
+  const { accountOptions } = useLookups();
   const createLoan = useCreateLoan();
   const updateLoan = useUpdateLoan();
 
@@ -48,6 +50,7 @@ export function LoanFormDialog({
     defaultValues: {
       type: "borrowed",
       person: "",
+      accountId: "",
       principal: undefined,
       interestRate: undefined,
       borrowDate: today(),
@@ -57,6 +60,10 @@ export function LoanFormDialog({
     },
   });
 
+  const loanType = form.watch("type");
+  const accountLabel =
+    loanType === "lent" ? "Paid from account" : "Received in account";
+
   React.useEffect(() => {
     if (!open) return;
     form.reset(
@@ -64,6 +71,7 @@ export function LoanFormDialog({
         ? {
             type: loan.type,
             person: loan.person,
+            accountId: loan.accountId ?? "",
             principal: loan.principal,
             interestRate: loan.interestRate,
             borrowDate: loan.borrowDate,
@@ -74,6 +82,7 @@ export function LoanFormDialog({
         : {
             type: "borrowed",
             person: "",
+            accountId: "",
             principal: undefined,
             interestRate: undefined,
             borrowDate: today(),
@@ -127,6 +136,13 @@ export function LoanFormDialog({
               name="person"
               label="Person / Institution"
               placeholder="Who is it with?"
+            />
+            <SelectField
+              control={form.control}
+              name="accountId"
+              label={accountLabel}
+              placeholder="Select account"
+              options={accountOptions}
             />
             <div className="grid gap-4 sm:grid-cols-2">
               <NumberField

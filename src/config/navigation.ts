@@ -11,6 +11,8 @@ export type NavIcon =
   | "accounts"
   | "categories"
   | "loans"
+  | "investments"
+  | "assets"
   | "reports"
   | "settings";
 
@@ -61,6 +63,18 @@ export const primaryNav: NavItem[] = [
     href: "/loans",
     icon: "loans",
     description: "Money borrowed and lent",
+  },
+  {
+    title: "Investments",
+    href: "/investments",
+    icon: "investments",
+    description: "Holdings and their performance",
+  },
+  {
+    title: "Assets",
+    href: "/assets",
+    icon: "assets",
+    description: "Property, vehicles and valuables",
   },
   {
     title: "Reports",

@@ -48,14 +48,18 @@ export default function SettingsPage() {
           <CardDescription>Your Google account details.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-1 text-sm">
-          <div className="flex justify-between">
+          <div className="flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <span className="text-muted-foreground">Name</span>
-            <span className="font-medium">{user?.name ?? "—"}</span>
+            <span className="font-medium sm:text-right sm:break-words">
+              {user?.name ?? "—"}
+            </span>
           </div>
           <Separator className="my-2" />
-          <div className="flex justify-between">
+          <div className="flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <span className="text-muted-foreground">Email</span>
-            <span className="font-medium">{user?.email ?? "—"}</span>
+            <span className="min-w-0 break-words font-medium sm:text-right">
+              {user?.email ?? "—"}
+            </span>
           </div>
         </CardContent>
       </Card>

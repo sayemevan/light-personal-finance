@@ -55,9 +55,56 @@ export async function ensureFinanceWorkspace(): Promise<FinanceWorkspace> {
   );
   if (!spreadsheetId) {
     spreadsheetId = await createFinanceSpreadsheet(rootFolderId);
+  } else {
+    // Non-destructive migration: make sure tabs added in later schema versions
+    // (e.g. Investments) exist and have their header row on pre-existing sheets.
+    await ensureSheetTabs(spreadsheetId);
   }
 
   return { rootFolderId, spreadsheetId, receiptsFolderId, reportsFolderId };
+}
+
+/**
+ * Ensure every worksheet declared in `SHEET_TABS` exists, creating any that are
+ * missing and seeding their header row. Safe to call repeatedly.
+ */
+async function ensureSheetTabs(spreadsheetId: string): Promise<void> {
+  const sheets = await getSheetsClient();
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: "sheets.properties.title",
+  });
+  const existing = new Set(
+    (meta.data.sheets ?? [])
+      .map((sheet) => sheet.properties?.title)
+      .filter((title): title is string => Boolean(title)),
+  );
+
+  const missing = Object.values(SHEET_TABS).filter(
+    (tab) => !existing.has(tab),
+  );
+  if (missing.length === 0) return;
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: missing.map((title) => ({ addSheet: { properties: { title } } })),
+    },
+  });
+
+  const hasColumns = (tab: string): tab is keyof typeof SHEET_COLUMNS =>
+    tab in SHEET_COLUMNS;
+
+  const headerData = missing
+    .filter(hasColumns)
+    .map((tab) => ({
+      range: `${tab}!A1`,
+      values: [[...SHEET_COLUMNS[tab]]],
+    }));
+
+  if (headerData.length > 0) {
+    await sheets_batchUpdateValues(spreadsheetId, headerData);
+  }
 }
 
 /** Resolve (and cache) the workspace for the currently signed-in user. */

@@ -47,6 +47,7 @@ export async function createLoan(input: CreateLoanInput): Promise<Loan> {
     id: generateId(),
     type: input.type,
     person: input.person,
+    accountId: input.accountId,
     principal: input.principal,
     interestRate: input.interestRate,
     borrowDate: input.borrowDate,

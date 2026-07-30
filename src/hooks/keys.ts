@@ -6,6 +6,8 @@ export const queryKeys = {
   categories: ["categories"] as const,
   loans: ["loans"] as const,
   loan: (id: string) => ["loans", id] as const,
+  investments: ["investments"] as const,
+  assets: ["assets"] as const,
   dashboard: ["dashboard"] as const,
   reports: (name: string) => ["reports", name] as const,
   settings: ["settings"] as const,
