@@ -26,7 +26,11 @@ function sumBy<T>(items: T[], pick: (item: T) => number): number {
 
 /**
  * Current balance = opening balance + income in − expense out − money spent
- * buying investments/assets that were funded from this account.
+ * buying investments/assets that were funded from this account, plus the effect
+ * of loans that moved money through this account:
+ *   • lending money out reduces the balance (and repayments received add it back)
+ *   • borrowing money in raises the balance (and repayments made reduce it)
+ * Loan repayments are assumed to flow through the loan's own account.
  */
 export function computeAccountBalance(
   account: Account,
@@ -34,6 +38,8 @@ export function computeAccountBalance(
   income: Income[],
   investments: Investment[] = [],
   assets: Asset[] = [],
+  loans: Loan[] = [],
+  loanPayments: LoanPayment[] = [],
 ): number {
   const inflow = sumBy(
     income.filter((i) => i.accountId === account.id),
@@ -51,12 +57,41 @@ export function computeAccountBalance(
     assets.filter((a) => a.accountId === account.id),
     (a) => a.purchaseValue,
   );
+
+  const accountLoans = loans.filter((l) => l.accountId === account.id);
+  const loanIds = new Set(accountLoans.map((l) => l.id));
+  const accountPayments = loanPayments.filter((p) => loanIds.has(p.loanId));
+
+  // Principal that left the account when lending, or entered when borrowing.
+  const lentOut = sumBy(
+    accountLoans.filter((l) => l.type === "lent"),
+    (l) => l.principal,
+  );
+  const borrowedIn = sumBy(
+    accountLoans.filter((l) => l.type === "borrowed"),
+    (l) => l.principal,
+  );
+  // Repayments received on lent loans return money; repayments made on borrowed
+  // loans send money out.
+  const receiptsIn = sumBy(
+    accountPayments.filter((p) => p.direction === "receipt"),
+    (p) => p.amount,
+  );
+  const paymentsOut = sumBy(
+    accountPayments.filter((p) => p.direction === "payment"),
+    (p) => p.amount,
+  );
+
   return (
     account.openingBalance +
-    inflow -
+    inflow +
+    borrowedIn +
+    receiptsIn -
     outflow -
     investmentOutflow -
-    assetOutflow
+    assetOutflow -
+    lentOut -
+    paymentsOut
   );
 }
 

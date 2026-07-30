@@ -40,7 +40,15 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
   const totalBalance = accounts.reduce(
     (sum, account) =>
       sum +
-      computeAccountBalance(account, expenses, income, investments, assets),
+      computeAccountBalance(
+        account,
+        expenses,
+        income,
+        investments,
+        assets,
+        loans,
+        payments,
+      ),
     0,
   );
 

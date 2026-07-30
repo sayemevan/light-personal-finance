@@ -4,6 +4,7 @@ import * as React from "react";
 import { Eye, HandCoins, Plus } from "lucide-react";
 
 import { useLoans, useDeleteLoan } from "@/hooks/use-loans";
+import { useLookups } from "@/hooks/use-lookups";
 import { useCurrency } from "@/hooks/use-settings";
 import { formatCurrency, formatDate } from "@/lib/format";
 import {
@@ -44,6 +45,7 @@ const STATUS_VARIANT: Record<
 export default function LoansPage() {
   const loansQuery = useLoans();
   const currency = useCurrency();
+  const { accountName } = useLookups();
   const deleteLoan = useDeleteLoan();
 
   const [formOpen, setFormOpen] = React.useState(false);
@@ -97,6 +99,12 @@ export default function LoansPage() {
         sortValue: (row) => row.remainingBalance ?? 0,
       },
       {
+        id: "account",
+        header: "Account",
+        cell: (row) => (row.accountId ? accountName(row.accountId) : "—"),
+        sortValue: (row) => (row.accountId ? accountName(row.accountId) : ""),
+      },
+      {
         id: "due",
         header: "Due date",
         cell: (row) => (row.dueDate ? formatDate(row.dueDate) : "—"),
@@ -132,7 +140,7 @@ export default function LoansPage() {
         ),
       },
     ],
-    [currency],
+    [currency, accountName],
   );
 
   return (
