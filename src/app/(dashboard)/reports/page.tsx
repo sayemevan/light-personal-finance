@@ -12,10 +12,13 @@ import {
   useAssetSummary,
 } from "@/hooks/use-reports";
 import { useCurrency } from "@/hooks/use-settings";
+import { usePagination } from "@/hooks/use-pagination";
 import { formatCurrency } from "@/lib/format";
 import { CATEGORY_KIND_LABELS } from "@/lib/labels";
+import type { CategoryKind } from "@/types/domain";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
+import { Pagination } from "@/components/shared/pagination";
 import { QueryView } from "@/components/shared/query-view";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -126,36 +129,7 @@ export default function ReportsPage() {
                       <CardTitle>Category totals</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Category</TableHead>
-                            <TableHead>Type</TableHead>
-                            <TableHead className="text-right">Total</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {rows.map((row) => (
-                            <TableRow key={row.categoryId}>
-                              <TableCell>{row.name}</TableCell>
-                              <TableCell>
-                                <Badge
-                                  variant={
-                                    row.kind === "income"
-                                      ? "success"
-                                      : "secondary"
-                                  }
-                                >
-                                  {CATEGORY_KIND_LABELS[row.kind]}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-right font-medium">
-                                {formatCurrency(row.total, currency)}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+                      <CategoryTotalsTable rows={rows} currency={currency} />
                     </CardContent>
                   </Card>
                 </div>
@@ -176,34 +150,7 @@ export default function ReportsPage() {
                     <CardDescription>Inflow, outflow and balance</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Account</TableHead>
-                          <TableHead className="text-right">Inflow</TableHead>
-                          <TableHead className="text-right">Outflow</TableHead>
-                          <TableHead className="text-right">Balance</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {rows.map((row) => (
-                          <TableRow key={row.accountId}>
-                            <TableCell className="font-medium">
-                              {row.name}
-                            </TableCell>
-                            <TableCell className="text-right text-emerald-600 dark:text-emerald-400">
-                              {formatCurrency(row.inflow, currency)}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {formatCurrency(row.outflow, currency)}
-                            </TableCell>
-                            <TableCell className="text-right font-medium">
-                              {formatCurrency(row.balance, currency)}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                    <AccountSummaryTable rows={rows} currency={currency} />
                   </CardContent>
                 </Card>
               )
@@ -284,40 +231,10 @@ export default function ReportsPage() {
                         <CardTitle>Breakdown by type</CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Type</TableHead>
-                              <TableHead className="text-right">
-                                Invested
-                              </TableHead>
-                              <TableHead className="text-right">Value</TableHead>
-                              <TableHead className="text-right">
-                                Gain / loss
-                              </TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {summary.byType.map((row) => (
-                              <TableRow key={row.key}>
-                                <TableCell className="font-medium">
-                                  {row.label}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  {formatCurrency(row.invested, currency)}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  {formatCurrency(row.currentValue, currency)}
-                                </TableCell>
-                                <TableCell
-                                  className={gainClass(row.gain)}
-                                >
-                                  {formatSigned(row.gain, currency)}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
+                        <InvestmentBreakdownTable
+                          rows={summary.byType}
+                          currency={currency}
+                        />
                       </CardContent>
                     </Card>
                   </div>
@@ -375,36 +292,10 @@ export default function ReportsPage() {
                         <CardTitle>Breakdown by category</CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Category</TableHead>
-                              <TableHead className="text-right">
-                                Purchase
-                              </TableHead>
-                              <TableHead className="text-right">Value</TableHead>
-                              <TableHead className="text-right">Change</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {summary.byCategory.map((row) => (
-                              <TableRow key={row.key}>
-                                <TableCell className="font-medium">
-                                  {row.label}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  {formatCurrency(row.purchaseValue, currency)}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  {formatCurrency(row.currentValue, currency)}
-                                </TableCell>
-                                <TableCell className={gainClass(row.gain)}>
-                                  {formatSigned(row.gain, currency)}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
+                        <AssetBreakdownTable
+                          rows={summary.byCategory}
+                          currency={currency}
+                        />
                       </CardContent>
                     </Card>
                   </div>
@@ -430,6 +321,242 @@ function gainClass(value: number): string {
   if (value > 0) return "text-right text-emerald-600 dark:text-emerald-400";
   if (value < 0) return "text-right text-red-600 dark:text-red-400";
   return "text-right";
+}
+
+const REPORT_PAGE_SIZE = 10;
+
+interface CategoryRow {
+  categoryId: string;
+  name: string;
+  kind: CategoryKind;
+  total: number;
+}
+
+function CategoryTotalsTable({
+  rows,
+  currency,
+}: {
+  rows: CategoryRow[];
+  currency: string;
+}) {
+  const { pageItems, page, pageSize, total, setPage } = usePagination(
+    rows,
+    REPORT_PAGE_SIZE,
+  );
+  return (
+    <div className="space-y-4">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Category</TableHead>
+            <TableHead>Type</TableHead>
+            <TableHead className="text-right">Total</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {pageItems.map((row) => (
+            <TableRow key={row.categoryId}>
+              <TableCell>{row.name}</TableCell>
+              <TableCell>
+                <Badge
+                  variant={row.kind === "income" ? "success" : "secondary"}
+                >
+                  {CATEGORY_KIND_LABELS[row.kind]}
+                </Badge>
+              </TableCell>
+              <TableCell className="text-right font-medium">
+                {formatCurrency(row.total, currency)}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      {total > pageSize ? (
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={setPage}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+interface AccountRow {
+  accountId: string;
+  name: string;
+  inflow: number;
+  outflow: number;
+  balance: number;
+}
+
+function AccountSummaryTable({
+  rows,
+  currency,
+}: {
+  rows: AccountRow[];
+  currency: string;
+}) {
+  const { pageItems, page, pageSize, total, setPage } = usePagination(
+    rows,
+    REPORT_PAGE_SIZE,
+  );
+  return (
+    <div className="space-y-4">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Account</TableHead>
+            <TableHead className="text-right">Inflow</TableHead>
+            <TableHead className="text-right">Outflow</TableHead>
+            <TableHead className="text-right">Balance</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {pageItems.map((row) => (
+            <TableRow key={row.accountId}>
+              <TableCell className="font-medium">{row.name}</TableCell>
+              <TableCell className="text-right text-emerald-600 dark:text-emerald-400">
+                {formatCurrency(row.inflow, currency)}
+              </TableCell>
+              <TableCell className="text-right">
+                {formatCurrency(row.outflow, currency)}
+              </TableCell>
+              <TableCell className="text-right font-medium">
+                {formatCurrency(row.balance, currency)}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      {total > pageSize ? (
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={setPage}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+interface BreakdownRow {
+  key: string;
+  label: string;
+  currentValue: number;
+  gain: number;
+}
+
+interface InvestmentRow extends BreakdownRow {
+  invested: number;
+}
+
+function InvestmentBreakdownTable({
+  rows,
+  currency,
+}: {
+  rows: InvestmentRow[];
+  currency: string;
+}) {
+  const { pageItems, page, pageSize, total, setPage } = usePagination(
+    rows,
+    REPORT_PAGE_SIZE,
+  );
+  return (
+    <div className="space-y-4">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Type</TableHead>
+            <TableHead className="text-right">Invested</TableHead>
+            <TableHead className="text-right">Value</TableHead>
+            <TableHead className="text-right">Gain / loss</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {pageItems.map((row) => (
+            <TableRow key={row.key}>
+              <TableCell className="font-medium">{row.label}</TableCell>
+              <TableCell className="text-right">
+                {formatCurrency(row.invested, currency)}
+              </TableCell>
+              <TableCell className="text-right">
+                {formatCurrency(row.currentValue, currency)}
+              </TableCell>
+              <TableCell className={gainClass(row.gain)}>
+                {formatSigned(row.gain, currency)}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      {total > pageSize ? (
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={setPage}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+interface AssetRow extends BreakdownRow {
+  purchaseValue: number;
+}
+
+function AssetBreakdownTable({
+  rows,
+  currency,
+}: {
+  rows: AssetRow[];
+  currency: string;
+}) {
+  const { pageItems, page, pageSize, total, setPage } = usePagination(
+    rows,
+    REPORT_PAGE_SIZE,
+  );
+  return (
+    <div className="space-y-4">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Category</TableHead>
+            <TableHead className="text-right">Purchase</TableHead>
+            <TableHead className="text-right">Value</TableHead>
+            <TableHead className="text-right">Change</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {pageItems.map((row) => (
+            <TableRow key={row.key}>
+              <TableCell className="font-medium">{row.label}</TableCell>
+              <TableCell className="text-right">
+                {formatCurrency(row.purchaseValue, currency)}
+              </TableCell>
+              <TableCell className="text-right">
+                {formatCurrency(row.currentValue, currency)}
+              </TableCell>
+              <TableCell className={gainClass(row.gain)}>
+                {formatSigned(row.gain, currency)}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      {total > pageSize ? (
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={setPage}
+        />
+      ) : null}
+    </div>
+  );
 }
 
 function EmptyReport() {

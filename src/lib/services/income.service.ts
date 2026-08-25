@@ -1,15 +1,71 @@
 import "server-only";
-import { incomeRepo } from "@/lib/repositories";
-import { getSpreadsheetId } from "@/lib/google/workspace";
+import {
+  accountsRepo,
+  categoriesRepo,
+  incomeRepo,
+} from "@/lib/repositories";
+import { getSpreadsheetId, getWorkspaceForCurrentUser } from "@/lib/google/workspace";
+import { queryCollection } from "@/lib/services/query";
 import { generateId } from "@/lib/id";
 import { AppError } from "@/lib/errors";
 import type { Income } from "@/types/domain";
-import type { CreateIncomeInput } from "@/lib/schemas";
+import type { Paginated } from "@/types/api";
+import type { CreateIncomeInput, IncomeListQuery } from "@/lib/schemas";
 
-export async function listIncome(): Promise<Income[]> {
-  const spreadsheetId = await getSpreadsheetId();
-  const income = await incomeRepo.list(spreadsheetId);
-  return income.sort((a, b) => b.date.localeCompare(a.date));
+/**
+ * Return a single page of income entries with server-side account/category
+ * filtering, search and sort. Defaults to newest first.
+ */
+export async function listIncome(
+  query: IncomeListQuery,
+): Promise<Paginated<Income>> {
+  const { spreadsheetId } = await getWorkspaceForCurrentUser();
+  const [income, accounts, categories] = await Promise.all([
+    incomeRepo.list(spreadsheetId),
+    accountsRepo.list(spreadsheetId),
+    categoriesRepo.list(spreadsheetId),
+  ]);
+
+  const accountName = (id: string) =>
+    accounts.find((a) => a.id === id)?.name ?? "";
+  const categoryName = (id: string) =>
+    categories.find((c) => c.id === id)?.name ?? "";
+
+  let rows = income;
+  if (query.categoryId) {
+    rows = rows.filter((i) => i.categoryId === query.categoryId);
+  }
+  if (query.accountId) {
+    rows = rows.filter((i) => i.accountId === query.accountId);
+  }
+
+  return queryCollection(
+    rows,
+    [
+      { key: "date", get: (i) => i.date, searchable: true, sortable: true },
+      {
+        key: "category",
+        get: (i) => categoryName(i.categoryId),
+        searchable: true,
+        sortable: true,
+      },
+      {
+        key: "account",
+        get: (i) => accountName(i.accountId),
+        searchable: true,
+        sortable: true,
+      },
+      { key: "notes", get: (i) => i.notes ?? "", searchable: true },
+      { key: "amount", get: (i) => i.amount, sortable: true },
+    ],
+    {
+      page: query.page,
+      pageSize: query.pageSize,
+      search: query.search,
+      sortBy: query.sortBy ?? "date",
+      sortDir: query.sortDir ?? "desc",
+    },
+  );
 }
 
 export async function getIncome(id: string): Promise<Income> {

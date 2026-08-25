@@ -28,6 +28,8 @@ interface LoanDetailSheetProps {
   onOpenChange: (open: boolean) => void;
 }
 
+const HISTORY_PAGE_SIZE = 8;
+
 export function LoanDetailSheet({
   loanId,
   open,
@@ -38,10 +40,16 @@ export function LoanDetailSheet({
   const { accountName } = useLookups();
   const currency = useCurrency();
   const [paymentOpen, setPaymentOpen] = React.useState(false);
+  const [visibleCount, setVisibleCount] = React.useState(HISTORY_PAGE_SIZE);
+
+  React.useEffect(() => {
+    setVisibleCount(HISTORY_PAGE_SIZE);
+  }, [loanId, open]);
 
   const loan = loanQuery.data;
   const direction: LoanPaymentDirection =
     loan?.type === "lent" ? "receipt" : "payment";
+  const visiblePayments = loan?.payments.slice(0, visibleCount) ?? [];
 
   return (
     <>
@@ -116,7 +124,7 @@ export function LoanDetailSheet({
                     No payments recorded yet.
                   </p>
                 ) : (
-                  loan.payments.map((payment) => (
+                  visiblePayments.map((payment) => (
                     <div
                       key={payment.id}
                       className="flex items-center justify-between rounded-lg border p-3 text-sm"
@@ -148,6 +156,18 @@ export function LoanDetailSheet({
                     </div>
                   ))
                 )}
+                {loan.payments.length > visibleCount ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() =>
+                      setVisibleCount((count) => count + HISTORY_PAGE_SIZE)
+                    }
+                  >
+                    Show more ({loan.payments.length - visibleCount} remaining)
+                  </Button>
+                ) : null}
               </div>
             </>
           )}

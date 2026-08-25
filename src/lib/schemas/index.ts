@@ -174,6 +174,27 @@ export const listQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
 });
 
+export const sortDirSchema = z.enum(["asc", "desc"]);
+
+/** Shared pagination / search / sort parameters for list endpoints. */
+export const paginationQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(200).default(25),
+  search: z.string().trim().max(200).optional(),
+  sortBy: z.string().max(40).optional(),
+  sortDir: sortDirSchema.optional(),
+});
+
+export const expenseListQuerySchema = paginationQuerySchema.extend({
+  categoryId: z.string().optional(),
+  accountId: z.string().optional(),
+});
+
+export const incomeListQuerySchema = paginationQuerySchema.extend({
+  categoryId: z.string().optional(),
+  accountId: z.string().optional(),
+});
+
 export type CreateExpenseInput = z.infer<typeof createExpenseSchema>;
 export type CreateIncomeInput = z.infer<typeof createIncomeSchema>;
 export type CreateAccountInput = z.infer<typeof createAccountSchema>;
@@ -186,3 +207,6 @@ export type CreateInvestmentTransactionInput = z.infer<
 export type CreateInvestmentInput = z.infer<typeof createInvestmentSchema>;
 export type CreateAssetInput = z.infer<typeof createAssetSchema>;
 export type ListQuery = z.infer<typeof listQuerySchema>;
+export type PaginationQuery = z.infer<typeof paginationQuerySchema>;
+export type ExpenseListQuery = z.infer<typeof expenseListQuerySchema>;
+export type IncomeListQuery = z.infer<typeof incomeListQuerySchema>;

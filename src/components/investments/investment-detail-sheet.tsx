@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Plus, Trash2, TrendingDown, TrendingUp } from "lucide-react";
+import { Trash2, TrendingDown, TrendingUp } from "lucide-react";
 
 import {
   useInvestment,
@@ -32,6 +32,8 @@ interface InvestmentDetailSheetProps {
   onOpenChange: (open: boolean) => void;
 }
 
+const HISTORY_PAGE_SIZE = 8;
+
 export function InvestmentDetailSheet({
   investmentId,
   open,
@@ -44,8 +46,15 @@ export function InvestmentDetailSheet({
   const [formOpen, setFormOpen] = React.useState(false);
   const [direction, setDirection] =
     React.useState<InvestmentTransactionDirection>("income");
+  const [visibleCount, setVisibleCount] = React.useState(HISTORY_PAGE_SIZE);
+
+  React.useEffect(() => {
+    setVisibleCount(HISTORY_PAGE_SIZE);
+  }, [investmentId, open]);
 
   const investment = investmentQuery.data;
+  const visibleTransactions =
+    investment?.transactions.slice(0, visibleCount) ?? [];
 
   const openForm = (next: InvestmentTransactionDirection) => {
     setDirection(next);
@@ -162,7 +171,7 @@ export function InvestmentDetailSheet({
                     No income or losses recorded yet.
                   </p>
                 ) : (
-                  investment.transactions.map((transaction) => {
+                  visibleTransactions.map((transaction) => {
                     const isIncome = transaction.direction === "income";
                     return (
                       <div
@@ -208,6 +217,19 @@ export function InvestmentDetailSheet({
                     );
                   })
                 )}
+                {investment.transactions.length > visibleCount ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() =>
+                      setVisibleCount((count) => count + HISTORY_PAGE_SIZE)
+                    }
+                  >
+                    Show more (
+                    {investment.transactions.length - visibleCount} remaining)
+                  </Button>
+                ) : null}
               </div>
             </>
           )}

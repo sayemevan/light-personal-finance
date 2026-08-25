@@ -2,13 +2,16 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api-response";
 import { requireSession } from "@/lib/auth/session";
-import { createIncomeSchema } from "@/lib/schemas";
+import { createIncomeSchema, incomeListQuerySchema } from "@/lib/schemas";
 import { createIncome, listIncome } from "@/lib/services/income.service";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     await requireSession();
-    return ok(await listIncome());
+    const query = incomeListQuerySchema.parse(
+      Object.fromEntries(new URL(req.url).searchParams),
+    );
+    return ok(await listIncome(query));
   } catch (error) {
     return fail(error);
   }

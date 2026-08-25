@@ -7,6 +7,7 @@ import { ExternalLink, Plus, Receipt } from "lucide-react";
 import { useExpenses, useDeleteExpense } from "@/hooks/use-expenses";
 import { useLookups } from "@/hooks/use-lookups";
 import { useCurrency } from "@/hooks/use-settings";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { PAYMENT_METHOD_LABELS } from "@/lib/labels";
 import type { Expense } from "@/types/domain";
@@ -18,6 +19,7 @@ import { RowActions } from "@/components/shared/row-actions";
 import {
   DataTable,
   type DataTableColumn,
+  type DataTableSort,
 } from "@/components/shared/data-table";
 import {
   FilterSelect,
@@ -27,8 +29,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ExpenseFormDialog } from "@/components/forms/expense-form-dialog";
 
+const PAGE_SIZE_OPTIONS = [25, 50, 100];
+
 export default function ExpensesPage() {
-  const expensesQuery = useExpenses();
   const { accountName, categoryName, accountOptions, categoryOptions } =
     useLookups();
   const currency = useCurrency();
@@ -37,8 +40,35 @@ export default function ExpensesPage() {
   const [formOpen, setFormOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<Expense | undefined>();
   const [deleting, setDeleting] = React.useState<Expense | undefined>();
+
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(25);
+  const [searchInput, setSearchInput] = React.useState("");
+  const [sort, setSort] = React.useState<DataTableSort>(null);
   const [categoryFilter, setCategoryFilter] = React.useState(ALL_VALUE);
   const [accountFilter, setAccountFilter] = React.useState(ALL_VALUE);
+
+  const search = useDebouncedValue(searchInput, 350);
+
+  // Return to the first page whenever the query shape changes.
+  React.useEffect(() => {
+    setPage(1);
+  }, [search, sort, categoryFilter, accountFilter, pageSize]);
+
+  const expensesQuery = useExpenses({
+    page,
+    pageSize,
+    search: search || undefined,
+    sortBy: sort?.columnId,
+    sortDir: sort?.dir,
+    categoryId: categoryFilter === ALL_VALUE ? undefined : categoryFilter,
+    accountId: accountFilter === ALL_VALUE ? undefined : accountFilter,
+  });
+
+  const hasActiveFilters =
+    Boolean(search) ||
+    categoryFilter !== ALL_VALUE ||
+    accountFilter !== ALL_VALUE;
 
   const openCreate = () => {
     setEditing(undefined);
@@ -56,27 +86,23 @@ export default function ExpensesPage() {
         header: "Date",
         cell: (row) => formatDate(row.date),
         sortValue: (row) => row.date,
-        searchValue: (row) => row.date,
       },
       {
         id: "category",
         header: "Category",
         cell: (row) => categoryName(row.categoryId),
         sortValue: (row) => categoryName(row.categoryId),
-        searchValue: (row) => categoryName(row.categoryId),
       },
       {
         id: "account",
         header: "Account",
         cell: (row) => accountName(row.accountId),
         sortValue: (row) => accountName(row.accountId),
-        searchValue: (row) => accountName(row.accountId),
       },
       {
         id: "merchant",
         header: "Merchant",
         cell: (row) => row.merchant ?? "—",
-        searchValue: (row) => `${row.merchant ?? ""} ${row.notes ?? ""}`,
       },
       {
         id: "method",
@@ -148,8 +174,8 @@ export default function ExpensesPage() {
       />
 
       <QueryView query={expensesQuery}>
-        {(expenses) =>
-          expenses.length === 0 ? (
+        {(result) =>
+          result.total === 0 && !hasActiveFilters ? (
             <EmptyState
               icon={Receipt}
               title="No expenses yet"
@@ -163,17 +189,24 @@ export default function ExpensesPage() {
             />
           ) : (
             <DataTable
-              data={expenses.filter(
-                (expense) =>
-                  (categoryFilter === ALL_VALUE ||
-                    expense.categoryId === categoryFilter) &&
-                  (accountFilter === ALL_VALUE ||
-                    expense.accountId === accountFilter),
-              )}
+              data={result.items}
               columns={columns}
               getRowId={(row) => row.id}
               searchPlaceholder="Search merchant, notes…"
               onRowClick={openEdit}
+              server={{
+                total: result.total,
+                page: result.page,
+                pageSize: result.pageSize,
+                onPageChange: setPage,
+                onPageSizeChange: setPageSize,
+                pageSizeOptions: PAGE_SIZE_OPTIONS,
+                search: searchInput,
+                onSearchChange: setSearchInput,
+                sort,
+                onSortChange: setSort,
+                isFetching: expensesQuery.isFetching,
+              }}
               toolbar={
                 <>
                   <FilterSelect

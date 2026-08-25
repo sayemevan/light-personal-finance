@@ -1,19 +1,23 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 import { api } from "@/lib/api-client";
 import { queryKeys, derivedKeys } from "@/hooks/keys";
+import { buildListQuery, type ListQueryParams } from "@/hooks/list-params";
 import { useCrudMutation } from "@/hooks/use-crud-mutation";
 import type { Expense } from "@/types/domain";
+import type { Paginated } from "@/types/api";
 import type { CreateExpenseInput } from "@/lib/schemas";
 
 const INVALIDATE = [queryKeys.expenses, ...derivedKeys] as const;
 
-export function useExpenses() {
+export function useExpenses(params: ListQueryParams) {
   return useQuery({
-    queryKey: queryKeys.expenses,
-    queryFn: () => api.get<Expense[]>("/api/expenses"),
+    queryKey: [...queryKeys.expenses, params],
+    queryFn: () =>
+      api.get<Paginated<Expense>>(`/api/expenses?${buildListQuery(params)}`),
+    placeholderData: keepPreviousData,
   });
 }
 

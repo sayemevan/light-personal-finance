@@ -6,6 +6,7 @@ import { Plus, TrendingUp } from "lucide-react";
 import { useIncome, useDeleteIncome } from "@/hooks/use-income";
 import { useLookups } from "@/hooks/use-lookups";
 import { useCurrency } from "@/hooks/use-settings";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { formatCurrency, formatDate } from "@/lib/format";
 import type { Income } from "@/types/domain";
 import { PageHeader } from "@/components/shared/page-header";
@@ -16,6 +17,7 @@ import { RowActions } from "@/components/shared/row-actions";
 import {
   DataTable,
   type DataTableColumn,
+  type DataTableSort,
 } from "@/components/shared/data-table";
 import {
   FilterSelect,
@@ -24,8 +26,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { IncomeFormDialog } from "@/components/forms/income-form-dialog";
 
+const PAGE_SIZE_OPTIONS = [25, 50, 100];
+
 export default function IncomePage() {
-  const incomeQuery = useIncome();
   const { accountName, categoryName, accountOptions, categoryOptions } =
     useLookups();
   const currency = useCurrency();
@@ -34,8 +37,34 @@ export default function IncomePage() {
   const [formOpen, setFormOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<Income | undefined>();
   const [deleting, setDeleting] = React.useState<Income | undefined>();
+
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(25);
+  const [searchInput, setSearchInput] = React.useState("");
+  const [sort, setSort] = React.useState<DataTableSort>(null);
   const [categoryFilter, setCategoryFilter] = React.useState(ALL_VALUE);
   const [accountFilter, setAccountFilter] = React.useState(ALL_VALUE);
+
+  const search = useDebouncedValue(searchInput, 350);
+
+  React.useEffect(() => {
+    setPage(1);
+  }, [search, sort, categoryFilter, accountFilter, pageSize]);
+
+  const incomeQuery = useIncome({
+    page,
+    pageSize,
+    search: search || undefined,
+    sortBy: sort?.columnId,
+    sortDir: sort?.dir,
+    categoryId: categoryFilter === ALL_VALUE ? undefined : categoryFilter,
+    accountId: accountFilter === ALL_VALUE ? undefined : accountFilter,
+  });
+
+  const hasActiveFilters =
+    Boolean(search) ||
+    categoryFilter !== ALL_VALUE ||
+    accountFilter !== ALL_VALUE;
 
   const openCreate = () => {
     setEditing(undefined);
@@ -53,27 +82,23 @@ export default function IncomePage() {
         header: "Date",
         cell: (row) => formatDate(row.date),
         sortValue: (row) => row.date,
-        searchValue: (row) => row.date,
       },
       {
         id: "category",
         header: "Category",
         cell: (row) => categoryName(row.categoryId),
         sortValue: (row) => categoryName(row.categoryId),
-        searchValue: (row) => categoryName(row.categoryId),
       },
       {
         id: "account",
         header: "Account",
         cell: (row) => accountName(row.accountId),
         sortValue: (row) => accountName(row.accountId),
-        searchValue: (row) => accountName(row.accountId),
       },
       {
         id: "notes",
         header: "Notes",
         cell: (row) => row.notes ?? "—",
-        searchValue: (row) => row.notes ?? "",
       },
       {
         id: "amount",
@@ -115,8 +140,8 @@ export default function IncomePage() {
       />
 
       <QueryView query={incomeQuery}>
-        {(income) =>
-          income.length === 0 ? (
+        {(result) =>
+          result.total === 0 && !hasActiveFilters ? (
             <EmptyState
               icon={TrendingUp}
               title="No income recorded"
@@ -130,17 +155,24 @@ export default function IncomePage() {
             />
           ) : (
             <DataTable
-              data={income.filter(
-                (entry) =>
-                  (categoryFilter === ALL_VALUE ||
-                    entry.categoryId === categoryFilter) &&
-                  (accountFilter === ALL_VALUE ||
-                    entry.accountId === accountFilter),
-              )}
+              data={result.items}
               columns={columns}
               getRowId={(row) => row.id}
               searchPlaceholder="Search notes…"
               onRowClick={openEdit}
+              server={{
+                total: result.total,
+                page: result.page,
+                pageSize: result.pageSize,
+                onPageChange: setPage,
+                onPageSizeChange: setPageSize,
+                pageSizeOptions: PAGE_SIZE_OPTIONS,
+                search: searchInput,
+                onSearchChange: setSearchInput,
+                sort,
+                onSortChange: setSort,
+                isFetching: incomeQuery.isFetching,
+              }}
               toolbar={
                 <>
                   <FilterSelect

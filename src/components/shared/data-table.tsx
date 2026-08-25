@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, ChevronsUpDown, Search } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
+import { Pagination } from "@/components/shared/pagination";
 import {
   Table,
   TableBody,
@@ -26,6 +27,27 @@ export interface DataTableColumn<T> {
   className?: string;
 }
 
+export type DataTableSort = { columnId: string; dir: "asc" | "desc" } | null;
+
+/**
+ * Controls for a server-driven table. When supplied, the table stops filtering,
+ * sorting and slicing locally and instead reflects the given page while
+ * delegating every interaction back to the parent.
+ */
+export interface DataTableServer {
+  total: number;
+  page: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange?: (size: number) => void;
+  pageSizeOptions?: number[];
+  search: string;
+  onSearchChange: (value: string) => void;
+  sort: DataTableSort;
+  onSortChange: (sort: DataTableSort) => void;
+  isFetching?: boolean;
+}
+
 interface DataTableProps<T> {
   data: T[];
   columns: DataTableColumn<T>[];
@@ -36,15 +58,25 @@ interface DataTableProps<T> {
   /** Shown when there are no rows after search/filter. */
   emptyState?: React.ReactNode;
   onRowClick?: (row: T) => void;
+  /** Provide to switch to server-driven pagination / search / sort. */
+  server?: DataTableServer;
+  /** Rows per page in client mode (default 15). */
+  pageSize?: number;
+  pageSizeOptions?: number[];
 }
-
-type SortState = { columnId: string; dir: "asc" | "desc" } | null;
 
 const alignClass = {
   left: "text-left",
   right: "text-right",
   center: "text-center",
 } as const;
+
+/** Cycle a column through asc → desc → unsorted. */
+function nextSort(prev: DataTableSort, columnId: string): DataTableSort {
+  if (prev?.columnId !== columnId) return { columnId, dir: "asc" };
+  if (prev.dir === "asc") return { columnId, dir: "desc" };
+  return null;
+}
 
 export function DataTable<T>({
   data,
@@ -54,12 +86,42 @@ export function DataTable<T>({
   toolbar,
   emptyState,
   onRowClick,
+  server,
+  pageSize: clientPageSize = 15,
+  pageSizeOptions = [15, 30, 50, 100],
 }: DataTableProps<T>) {
-  const [search, setSearch] = React.useState("");
-  const [sort, setSort] = React.useState<SortState>(null);
+  const isServer = Boolean(server);
 
+  // Client-mode state (ignored in server mode).
+  const [localSearch, setLocalSearch] = React.useState("");
+  const [localSort, setLocalSort] = React.useState<DataTableSort>(null);
+  const [localPage, setLocalPage] = React.useState(1);
+  const [localPageSize, setLocalPageSize] = React.useState(clientPageSize);
+
+  const search = isServer ? server!.search : localSearch;
+  const sort = isServer ? server!.sort : localSort;
+
+  const setSearch = (value: string) => {
+    if (isServer) server!.onSearchChange(value);
+    else {
+      setLocalSearch(value);
+      setLocalPage(1);
+    }
+  };
+
+  const toggleSort = (columnId: string) => {
+    const updated = nextSort(sort, columnId);
+    if (isServer) server!.onSortChange(updated);
+    else {
+      setLocalSort(updated);
+      setLocalPage(1);
+    }
+  };
+
+  // In client mode, search + sort the full dataset before paginating it.
   const processed = React.useMemo(() => {
-    const term = search.trim().toLowerCase();
+    if (isServer) return data;
+    const term = localSearch.trim().toLowerCase();
     let rows = data;
 
     if (term) {
@@ -71,10 +133,10 @@ export function DataTable<T>({
       );
     }
 
-    if (sort) {
-      const column = columns.find((c) => c.id === sort.columnId);
+    if (localSort) {
+      const column = columns.find((c) => c.id === localSort.columnId);
       if (column?.sortValue) {
-        const factor = sort.dir === "asc" ? 1 : -1;
+        const factor = localSort.dir === "asc" ? 1 : -1;
         rows = [...rows].sort((a, b) => {
           const av = column.sortValue!(a);
           const bv = column.sortValue!(b);
@@ -87,14 +149,35 @@ export function DataTable<T>({
     }
 
     return rows;
-  }, [data, columns, search, sort]);
+  }, [isServer, data, columns, localSearch, localSort]);
 
-  const toggleSort = (columnId: string) => {
-    setSort((prev) => {
-      if (prev?.columnId !== columnId) return { columnId, dir: "asc" };
-      if (prev.dir === "asc") return { columnId, dir: "desc" };
-      return null;
-    });
+  const total = isServer ? server!.total : processed.length;
+  const pageSize = isServer ? server!.pageSize : localPageSize;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const page = isServer ? server!.page : Math.min(localPage, pageCount);
+
+  // Keep the client page valid as the filtered result shrinks.
+  React.useEffect(() => {
+    if (!isServer && localPage > pageCount) setLocalPage(pageCount);
+  }, [isServer, localPage, pageCount]);
+
+  const rows = React.useMemo(() => {
+    if (isServer) return processed;
+    const start = (page - 1) * pageSize;
+    return processed.slice(start, start + pageSize);
+  }, [isServer, processed, page, pageSize]);
+
+  const handlePageChange = (nextPage: number) => {
+    if (isServer) server!.onPageChange(nextPage);
+    else setLocalPage(nextPage);
+  };
+
+  const handlePageSizeChange = (size: number) => {
+    if (isServer) server!.onPageSizeChange?.(size);
+    else {
+      setLocalPageSize(size);
+      setLocalPage(1);
+    }
   };
 
   return (
@@ -119,7 +202,12 @@ export function DataTable<T>({
         ) : null}
       </div>
 
-      <div className="rounded-xl border">
+      <div
+        className={cn(
+          "rounded-xl border transition-opacity",
+          server?.isFetching && "opacity-60",
+        )}
+      >
         <Table>
           <TableHeader>
             <TableRow>
@@ -178,7 +266,7 @@ export function DataTable<T>({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {processed.length === 0 ? (
+            {rows.length === 0 ? (
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={columns.length} className="h-40 p-0">
                   {emptyState ?? (
@@ -189,7 +277,7 @@ export function DataTable<T>({
                 </TableCell>
               </TableRow>
             ) : (
-              processed.map((row) => (
+              rows.map((row) => (
                 <TableRow
                   key={getRowId(row)}
                   onClick={onRowClick ? () => onRowClick(row) : undefined}
@@ -212,6 +300,18 @@ export function DataTable<T>({
           </TableBody>
         </Table>
       </div>
+
+      {total > 0 ? (
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={handlePageChange}
+          onPageSizeChange={handlePageSizeChange}
+          pageSizeOptions={isServer ? server!.pageSizeOptions : pageSizeOptions}
+          isLoading={server?.isFetching}
+        />
+      ) : null}
     </div>
   );
 }
