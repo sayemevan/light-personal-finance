@@ -12,6 +12,7 @@ export const queryKeys = {
   dashboard: ["dashboard"] as const,
   reports: (name: string) => ["reports", name] as const,
   settings: ["settings"] as const,
+  archiveYears: ["archive-years"] as const,
 };
 
 /** Keys that reflect derived/aggregated data affected by most mutations. */

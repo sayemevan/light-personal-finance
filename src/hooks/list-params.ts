@@ -7,6 +7,7 @@ export interface ListQueryParams {
   sortDir?: "asc" | "desc";
   categoryId?: string;
   accountId?: string;
+  year?: string;
 }
 
 /** Serialise list params into a query string, omitting empty values. */
@@ -19,5 +20,6 @@ export function buildListQuery(params: ListQueryParams): string {
   if (params.sortDir) search.set("sortDir", params.sortDir);
   if (params.categoryId) search.set("categoryId", params.categoryId);
   if (params.accountId) search.set("accountId", params.accountId);
+  if (params.year) search.set("year", params.year);
   return search.toString();
 }

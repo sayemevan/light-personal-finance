@@ -166,6 +166,15 @@ export async function getSpreadsheetId(): Promise<string> {
   return spreadsheetId;
 }
 
+/**
+ * Drop the in-memory workspace cache so the next request re-resolves Drive
+ * ids. Archive workbooks are looked up by name each run (they are not stored
+ * here); clearing still keeps the live workspace fresh after Drive writes.
+ */
+export function invalidateWorkspaceCache(): void {
+  workspaceCache.clear();
+}
+
 /** Create the spreadsheet with all tabs, move it into the folder, and seed it. */
 async function createFinanceSpreadsheet(rootFolderId: string): Promise<string> {
   const sheets = await getSheetsClient();

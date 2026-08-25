@@ -4,6 +4,7 @@ import * as React from "react";
 import { Plus, TrendingUp } from "lucide-react";
 
 import { useIncome, useDeleteIncome } from "@/hooks/use-income";
+import { useArchiveYears } from "@/hooks/use-history";
 import { useLookups } from "@/hooks/use-lookups";
 import { useCurrency } from "@/hooks/use-settings";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
@@ -27,12 +28,14 @@ import { Button } from "@/components/ui/button";
 import { IncomeFormDialog } from "@/components/forms/income-form-dialog";
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100];
+const CURRENT_YEAR = String(new Date().getFullYear());
 
 export default function IncomePage() {
   const { accountName, categoryName, accountOptions, categoryOptions } =
     useLookups();
   const currency = useCurrency();
   const deleteIncome = useDeleteIncome();
+  const archiveYears = useArchiveYears();
 
   const [formOpen, setFormOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<Income | undefined>();
@@ -44,12 +47,13 @@ export default function IncomePage() {
   const [sort, setSort] = React.useState<DataTableSort>(null);
   const [categoryFilter, setCategoryFilter] = React.useState(ALL_VALUE);
   const [accountFilter, setAccountFilter] = React.useState(ALL_VALUE);
+  const [yearFilter, setYearFilter] = React.useState(ALL_VALUE);
 
   const search = useDebouncedValue(searchInput, 350);
 
   React.useEffect(() => {
     setPage(1);
-  }, [search, sort, categoryFilter, accountFilter, pageSize]);
+  }, [search, sort, categoryFilter, accountFilter, yearFilter, pageSize]);
 
   const incomeQuery = useIncome({
     page,
@@ -59,12 +63,18 @@ export default function IncomePage() {
     sortDir: sort?.dir,
     categoryId: categoryFilter === ALL_VALUE ? undefined : categoryFilter,
     accountId: accountFilter === ALL_VALUE ? undefined : accountFilter,
+    year: yearFilter === ALL_VALUE ? CURRENT_YEAR : yearFilter,
   });
 
+  const isLive = yearFilter === ALL_VALUE || yearFilter === CURRENT_YEAR;
+  const yearOptions = (archiveYears.data?.income ?? [])
+    .filter((year) => year !== CURRENT_YEAR)
+    .map((year) => ({ label: year, value: year }));
   const hasActiveFilters =
     Boolean(search) ||
     categoryFilter !== ALL_VALUE ||
-    accountFilter !== ALL_VALUE;
+    accountFilter !== ALL_VALUE ||
+    !isLive;
 
   const openCreate = () => {
     setEditing(undefined);
@@ -75,8 +85,8 @@ export default function IncomePage() {
     setFormOpen(true);
   };
 
-  const columns: DataTableColumn<Income>[] = React.useMemo(
-    () => [
+  const columns: DataTableColumn<Income>[] = React.useMemo(() => {
+    const result: DataTableColumn<Income>[] = [
       {
         id: "date",
         header: "Date",
@@ -111,7 +121,9 @@ export default function IncomePage() {
         ),
         sortValue: (row) => row.amount,
       },
-      {
+    ];
+    if (isLive) {
+      result.push({
         id: "actions",
         header: "",
         align: "right",
@@ -121,10 +133,10 @@ export default function IncomePage() {
             onDelete={() => setDeleting(row)}
           />
         ),
-      },
-    ],
-    [accountName, categoryName, currency],
-  );
+      });
+    }
+    return result;
+  }, [accountName, categoryName, currency, isLive]);
 
   return (
     <>
@@ -159,7 +171,7 @@ export default function IncomePage() {
               columns={columns}
               getRowId={(row) => row.id}
               searchPlaceholder="Search notes…"
-              onRowClick={openEdit}
+              onRowClick={isLive ? openEdit : undefined}
               server={{
                 total: result.total,
                 page: result.page,
@@ -175,6 +187,13 @@ export default function IncomePage() {
               }}
               toolbar={
                 <>
+                  <FilterSelect
+                    value={yearFilter}
+                    onChange={setYearFilter}
+                    options={yearOptions}
+                    allLabel={`${CURRENT_YEAR} (Live)`}
+                    placeholder="Year"
+                  />
                   <FilterSelect
                     value={categoryFilter}
                     onChange={setCategoryFilter}

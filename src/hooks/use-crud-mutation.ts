@@ -11,7 +11,7 @@ import { toast } from "sonner";
 export function useCrudMutation<TVars, TData>(
   mutationFn: (vars: TVars) => Promise<TData>,
   options: {
-    successMessage: string;
+    successMessage: string | ((data: TData) => string);
     invalidate: readonly (readonly unknown[])[];
   },
 ) {
@@ -19,11 +19,15 @@ export function useCrudMutation<TVars, TData>(
 
   return useMutation({
     mutationFn,
-    onSuccess: () => {
+    onSuccess: (data) => {
       for (const key of options.invalidate) {
         void queryClient.invalidateQueries({ queryKey: key });
       }
-      toast.success(options.successMessage);
+      toast.success(
+        typeof options.successMessage === "function"
+          ? options.successMessage(data)
+          : options.successMessage,
+      );
     },
     onError: (error: unknown) => {
       toast.error(

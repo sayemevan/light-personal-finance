@@ -11,6 +11,7 @@ import {
   useInvestmentSummary,
   useAssetSummary,
 } from "@/hooks/use-reports";
+import { useArchiveYears } from "@/hooks/use-history";
 import { useCurrency } from "@/hooks/use-settings";
 import { usePagination } from "@/hooks/use-pagination";
 import { formatCurrency } from "@/lib/format";
@@ -39,10 +40,23 @@ import {
 } from "@/components/ui/table";
 import { MonthlyChart } from "@/components/charts/monthly-chart";
 import { CategoryDonut } from "@/components/charts/category-donut";
+import {
+  ALL_VALUE,
+  FilterSelect,
+} from "@/components/shared/filter-select";
+
+const CURRENT_YEAR = String(new Date().getFullYear());
 
 export default function ReportsPage() {
-  const monthly = useMonthlyReport();
-  const category = useCategorySummary();
+  const [yearFilter, setYearFilter] = React.useState(ALL_VALUE);
+  const selectedYear =
+    yearFilter === ALL_VALUE ? CURRENT_YEAR : yearFilter;
+  const archiveYears = useArchiveYears();
+  const yearOptions = (archiveYears.data?.all ?? [])
+    .filter((year) => year !== CURRENT_YEAR)
+    .map((year) => ({ label: year, value: year }));
+  const monthly = useMonthlyReport(selectedYear);
+  const category = useCategorySummary(selectedYear);
   const account = useAccountSummary();
   const loan = useLoanSummary();
   const investment = useInvestmentSummary();
@@ -67,6 +81,15 @@ export default function ReportsPage() {
         </TabsList>
 
         <TabsContent value="monthly" className="space-y-6">
+          <div className="flex justify-end">
+            <FilterSelect
+              value={yearFilter}
+              onChange={setYearFilter}
+              options={yearOptions}
+              allLabel={`${CURRENT_YEAR} (Live)`}
+              placeholder="Year"
+            />
+          </div>
           <QueryView query={monthly}>
             {(points) => {
               const yearIncome = points.reduce((s, p) => s + p.income, 0);
@@ -91,7 +114,9 @@ export default function ReportsPage() {
                     <CardHeader>
                       <CardTitle>Monthly trend</CardTitle>
                       <CardDescription>
-                        Income vs expense over the last 12 months
+                        {yearFilter === ALL_VALUE
+                          ? "Income vs expense over the last 12 months"
+                          : `Income vs expense during ${yearFilter}`}
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -105,6 +130,15 @@ export default function ReportsPage() {
         </TabsContent>
 
         <TabsContent value="category" className="space-y-6">
+          <div className="flex justify-end">
+            <FilterSelect
+              value={yearFilter}
+              onChange={setYearFilter}
+              options={yearOptions}
+              allLabel={`${CURRENT_YEAR} (Live)`}
+              placeholder="Year"
+            />
+          </div>
           <QueryView query={category}>
             {(rows) =>
               rows.length === 0 ? (

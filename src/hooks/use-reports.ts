@@ -13,18 +13,23 @@ import type {
   LoanSummary,
 } from "@/types/reports";
 
-export function useMonthlyReport() {
+export function useMonthlyReport(year: string) {
   return useQuery({
-    queryKey: queryKeys.reports("monthly"),
-    queryFn: () => api.get<MonthlyPoint[]>("/api/reports/monthly-expense"),
+    queryKey: [...queryKeys.reports("monthly"), year],
+    queryFn: () =>
+      api.get<MonthlyPoint[]>(
+        `/api/reports/monthly-expense?year=${encodeURIComponent(year)}`,
+      ),
   });
 }
 
-export function useCategorySummary() {
+export function useCategorySummary(year: string) {
   return useQuery({
-    queryKey: queryKeys.reports("category"),
+    queryKey: [...queryKeys.reports("category"), year],
     queryFn: () =>
-      api.get<CategorySummaryRow[]>("/api/reports/category-summary"),
+      api.get<CategorySummaryRow[]>(
+        `/api/reports/category-summary?year=${encodeURIComponent(year)}`,
+      ),
   });
 }
 

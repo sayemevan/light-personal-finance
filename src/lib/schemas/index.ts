@@ -175,6 +175,16 @@ export const listQuerySchema = z.object({
 });
 
 export const sortDirSchema = z.enum(["asc", "desc"]);
+export const yearSchema = z
+  .union([
+    z.literal("live"),
+    z.string().regex(/^\d{4}$/, "Expected a year in YYYY format"),
+  ])
+  .default(String(new Date().getFullYear()));
+
+export const reportYearQuerySchema = z.object({
+  year: yearSchema,
+});
 
 /** Shared pagination / search / sort parameters for list endpoints. */
 export const paginationQuerySchema = z.object({
@@ -183,6 +193,11 @@ export const paginationQuerySchema = z.object({
   search: z.string().trim().max(200).optional(),
   sortBy: z.string().max(40).optional(),
   sortDir: sortDirSchema.optional(),
+  year: yearSchema,
+});
+
+export const archiveKindSchema = z.object({
+  kind: categoryKindSchema,
 });
 
 export const expenseListQuerySchema = paginationQuerySchema.extend({
@@ -210,3 +225,4 @@ export type ListQuery = z.infer<typeof listQuerySchema>;
 export type PaginationQuery = z.infer<typeof paginationQuerySchema>;
 export type ExpenseListQuery = z.infer<typeof expenseListQuerySchema>;
 export type IncomeListQuery = z.infer<typeof incomeListQuerySchema>;
+export type ArchiveKindInput = z.infer<typeof archiveKindSchema>;

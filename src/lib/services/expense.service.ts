@@ -6,6 +6,7 @@ import {
 } from "@/lib/repositories";
 import { getWorkspaceForCurrentUser } from "@/lib/google/workspace";
 import { deleteFile } from "@/lib/google/drive";
+import { getExpensesForYear } from "@/lib/services/history.service";
 import { queryCollection } from "@/lib/services/query";
 import { generateId } from "@/lib/id";
 import { AppError } from "@/lib/errors";
@@ -23,7 +24,7 @@ export async function listExpenses(
 ): Promise<Paginated<Expense>> {
   const { spreadsheetId } = await getWorkspaceForCurrentUser();
   const [expenses, accounts, categories] = await Promise.all([
-    expensesRepo.list(spreadsheetId),
+    getExpensesForYear(query.year),
     accountsRepo.list(spreadsheetId),
     categoriesRepo.list(spreadsheetId),
   ]);

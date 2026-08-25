@@ -20,3 +20,16 @@ export interface Paginated<T> {
   page: number;
   pageSize: number;
 }
+
+export interface ArchiveYearSummary {
+  year: string;
+  total: number;
+  rowCount: number;
+}
+
+export interface ArchiveResult {
+  kind: "expense" | "income";
+  years: ArchiveYearSummary[];
+  archivedCount: number;
+  rollupCount: number;
+}

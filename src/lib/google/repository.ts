@@ -100,6 +100,10 @@ export class SheetRepository<T extends { id: string }> {
     return `${this.tab}!A2:${this.lastColumn}`;
   }
 
+  toRow(entity: T): Cell[] {
+    return this.codec.toRow(entity);
+  }
+
   async list(spreadsheetId: string): Promise<T[]> {
     const sheets = await getSheetsClient();
     const res = await sheets.spreadsheets.values.get({
@@ -118,15 +122,39 @@ export class SheetRepository<T extends { id: string }> {
   }
 
   async create(spreadsheetId: string, entity: T): Promise<T> {
+    await this.appendMany(spreadsheetId, [entity]);
+    return entity;
+  }
+
+  async appendMany(spreadsheetId: string, entities: T[]): Promise<void> {
+    if (entities.length === 0) return;
     const sheets = await getSheetsClient();
     await sheets.spreadsheets.values.append({
       spreadsheetId,
       range: `${this.tab}!A1`,
       valueInputOption: "USER_ENTERED",
       insertDataOption: "INSERT_ROWS",
-      requestBody: { values: [this.codec.toRow(entity)] },
+      requestBody: { values: entities.map((entity) => this.codec.toRow(entity)) },
     });
-    return entity;
+  }
+
+  /**
+   * Replace every data row (header stays). Used after archive so remaining
+   * rows plus rollups are written only once the archive copy has succeeded.
+   */
+  async replaceAll(spreadsheetId: string, entities: T[]): Promise<void> {
+    const sheets = await getSheetsClient();
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId,
+      range: this.dataRange,
+    });
+    if (entities.length === 0) return;
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${this.tab}!A2`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: entities.map((entity) => this.codec.toRow(entity)) },
+    });
   }
 
   async update(

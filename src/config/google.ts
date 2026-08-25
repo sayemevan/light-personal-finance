@@ -21,7 +21,22 @@ export const DRIVE_STRUCTURE = {
   spreadsheet: "Finance",
   receiptsFolder: "Receipts",
   reportsFolder: "Reports",
+  expenseArchive: "Finance Expense Archive",
+  incomeArchive: "Finance Income Archive",
 } as const;
+
+/** Worksheet in each archive spreadsheet that records per-year totals. */
+export const ARCHIVE_SUMMARY_TAB = "Summary";
+
+export const ARCHIVE_SUMMARY_COLUMNS = [
+  "year",
+  "total",
+  "archivedAt",
+  "rowCount",
+] as const;
+
+/** Live detail rows whose notes start with this prefix are skipped on archive. */
+export const ARCHIVE_NOTE_PREFIX = "[Archived ";
 
 /** Worksheet (tab) names inside the Finance spreadsheet. */
 export const SHEET_TABS = {

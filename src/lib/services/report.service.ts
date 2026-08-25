@@ -12,6 +12,11 @@ import {
 } from "@/lib/repositories";
 import { getSpreadsheetId } from "@/lib/google/workspace";
 import {
+  getExpensesForYear,
+  getIncomeForYear,
+  isLiveYear,
+} from "@/lib/services/history.service";
+import {
   buildMonthlySeries,
   computeAccountBalance,
   computeLoanRemaining,
@@ -39,29 +44,36 @@ function round2(value: number): number {
 }
 
 /** Shared 12-month income/expense series. */
-async function monthlySeries(months = 12): Promise<MonthlyPoint[]> {
-  const spreadsheetId = await getSpreadsheetId();
+async function monthlySeries(
+  year: string,
+  months = 12,
+): Promise<MonthlyPoint[]> {
   const [expenses, income] = await Promise.all([
-    expensesRepo.list(spreadsheetId),
-    incomeRepo.list(spreadsheetId),
+    getExpensesForYear(year),
+    getIncomeForYear(year),
   ]);
-  return buildMonthlySeries(expenses, income, months);
+  const reference = isLiveYear(year)
+    ? new Date()
+    : new Date(Number(year), 11, 1);
+  return buildMonthlySeries(expenses, income, months, reference);
 }
 
-export async function getMonthlyExpense(): Promise<MonthlyPoint[]> {
-  return monthlySeries();
+export async function getMonthlyExpense(year: string): Promise<MonthlyPoint[]> {
+  return monthlySeries(year);
 }
 
-export async function getMonthlyIncome(): Promise<MonthlyPoint[]> {
-  return monthlySeries();
+export async function getMonthlyIncome(year: string): Promise<MonthlyPoint[]> {
+  return monthlySeries(year);
 }
 
-export async function getCategorySummary(): Promise<CategorySummaryRow[]> {
+export async function getCategorySummary(
+  year: string,
+): Promise<CategorySummaryRow[]> {
   const spreadsheetId = await getSpreadsheetId();
   const [categories, expenses, income] = await Promise.all([
     categoriesRepo.list(spreadsheetId),
-    expensesRepo.list(spreadsheetId),
-    incomeRepo.list(spreadsheetId),
+    getExpensesForYear(year),
+    getIncomeForYear(year),
   ]);
 
   const totals = new Map<string, number>();

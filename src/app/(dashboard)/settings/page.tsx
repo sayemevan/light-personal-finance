@@ -1,12 +1,17 @@
 "use client";
 
+import * as React from "react";
 import { useSession } from "next-auth/react";
-import { FolderSync } from "lucide-react";
+import { Archive, FolderSync } from "lucide-react";
 
 import { siteConfig } from "@/config/site";
 import { useSettings, useUpdateSettings } from "@/hooks/use-settings";
-import { useVerifyWorkspace } from "@/hooks/use-workspace";
+import {
+  useArchiveTransactions,
+  useVerifyWorkspace,
+} from "@/hooks/use-workspace";
 import { PageHeader } from "@/components/shared/page-header";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -32,8 +37,14 @@ export default function SettingsPage() {
   const settingsQuery = useSettings();
   const updateSettings = useUpdateSettings();
   const verifyWorkspace = useVerifyWorkspace();
+  const archiveTransactions = useArchiveTransactions();
+  const [archiveKind, setArchiveKind] = React.useState<
+    "expense" | "income" | null
+  >(null);
 
   const user = session?.user;
+  const workspaceBusy =
+    verifyWorkspace.isPending || archiveTransactions.isPending;
 
   return (
     <>
@@ -108,17 +119,68 @@ export default function SettingsPage() {
             Drive. Re-run setup if the folder structure was changed.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <Button
             variant="outline"
             onClick={() => verifyWorkspace.mutate()}
-            disabled={verifyWorkspace.isPending}
+            disabled={workspaceBusy}
           >
             <FolderSync className="h-4 w-4" />
             {verifyWorkspace.isPending ? "Verifying…" : "Verify workspace"}
           </Button>
+
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Archive copies expense or income details into a dedicated Drive
+              spreadsheet and leaves monthly per-category totals in the live
+              sheet so balances, trends and category reports stay correct.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setArchiveKind("expense")}
+                disabled={workspaceBusy}
+              >
+                <Archive className="h-4 w-4" />
+                Archive expenses
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setArchiveKind("income")}
+                disabled={workspaceBusy}
+              >
+                <Archive className="h-4 w-4" />
+                Archive income
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={Boolean(archiveKind)}
+        onOpenChange={(open) => !open && setArchiveKind(null)}
+        title={
+          archiveKind === "income" ? "Archive income?" : "Archive expenses?"
+        }
+        description={
+          archiveKind === "income"
+            ? "Income details will move into “Finance Income Archive” in Drive. The live list will show monthly summary rows plus any new entries. Do not use the app until this finishes."
+            : "Expense details will move into “Finance Expense Archive” in Drive. The live list will show monthly summary rows plus any new entries. Do not use the app until this finishes."
+        }
+        confirmLabel={
+          archiveKind === "income" ? "Archive income" : "Archive expenses"
+        }
+        destructive={false}
+        loading={archiveTransactions.isPending}
+        onConfirm={() => {
+          if (!archiveKind) return;
+          archiveTransactions.mutate(
+            { kind: archiveKind },
+            { onSuccess: () => setArchiveKind(null) },
+          );
+        }}
+      />
     </>
   );
 }

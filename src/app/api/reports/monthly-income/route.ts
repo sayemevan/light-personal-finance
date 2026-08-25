@@ -1,11 +1,17 @@
+import type { NextRequest } from "next/server";
+
 import { ok, fail } from "@/lib/api-response";
 import { requireSession } from "@/lib/auth/session";
+import { reportYearQuerySchema } from "@/lib/schemas";
 import { getMonthlyIncome } from "@/lib/services/report.service";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     await requireSession();
-    return ok(await getMonthlyIncome());
+    const { year } = reportYearQuerySchema.parse(
+      Object.fromEntries(new URL(req.url).searchParams),
+    );
+    return ok(await getMonthlyIncome(year));
   } catch (error) {
     return fail(error);
   }

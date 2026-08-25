@@ -5,6 +5,7 @@ import {
   incomeRepo,
 } from "@/lib/repositories";
 import { getSpreadsheetId, getWorkspaceForCurrentUser } from "@/lib/google/workspace";
+import { getIncomeForYear } from "@/lib/services/history.service";
 import { queryCollection } from "@/lib/services/query";
 import { generateId } from "@/lib/id";
 import { AppError } from "@/lib/errors";
@@ -21,7 +22,7 @@ export async function listIncome(
 ): Promise<Paginated<Income>> {
   const { spreadsheetId } = await getWorkspaceForCurrentUser();
   const [income, accounts, categories] = await Promise.all([
-    incomeRepo.list(spreadsheetId),
+    getIncomeForYear(query.year),
     accountsRepo.list(spreadsheetId),
     categoriesRepo.list(spreadsheetId),
   ]);

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ExternalLink, Plus, Receipt } from "lucide-react";
 
 import { useExpenses, useDeleteExpense } from "@/hooks/use-expenses";
+import { useArchiveYears } from "@/hooks/use-history";
 import { useLookups } from "@/hooks/use-lookups";
 import { useCurrency } from "@/hooks/use-settings";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
@@ -30,12 +31,14 @@ import { Button } from "@/components/ui/button";
 import { ExpenseFormDialog } from "@/components/forms/expense-form-dialog";
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100];
+const CURRENT_YEAR = String(new Date().getFullYear());
 
 export default function ExpensesPage() {
   const { accountName, categoryName, accountOptions, categoryOptions } =
     useLookups();
   const currency = useCurrency();
   const deleteExpense = useDeleteExpense();
+  const archiveYears = useArchiveYears();
 
   const [formOpen, setFormOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<Expense | undefined>();
@@ -47,13 +50,14 @@ export default function ExpensesPage() {
   const [sort, setSort] = React.useState<DataTableSort>(null);
   const [categoryFilter, setCategoryFilter] = React.useState(ALL_VALUE);
   const [accountFilter, setAccountFilter] = React.useState(ALL_VALUE);
+  const [yearFilter, setYearFilter] = React.useState(ALL_VALUE);
 
   const search = useDebouncedValue(searchInput, 350);
 
   // Return to the first page whenever the query shape changes.
   React.useEffect(() => {
     setPage(1);
-  }, [search, sort, categoryFilter, accountFilter, pageSize]);
+  }, [search, sort, categoryFilter, accountFilter, yearFilter, pageSize]);
 
   const expensesQuery = useExpenses({
     page,
@@ -63,12 +67,18 @@ export default function ExpensesPage() {
     sortDir: sort?.dir,
     categoryId: categoryFilter === ALL_VALUE ? undefined : categoryFilter,
     accountId: accountFilter === ALL_VALUE ? undefined : accountFilter,
+    year: yearFilter === ALL_VALUE ? CURRENT_YEAR : yearFilter,
   });
 
+  const isLive = yearFilter === ALL_VALUE || yearFilter === CURRENT_YEAR;
+  const yearOptions = (archiveYears.data?.expense ?? [])
+    .filter((year) => year !== CURRENT_YEAR)
+    .map((year) => ({ label: year, value: year }));
   const hasActiveFilters =
     Boolean(search) ||
     categoryFilter !== ALL_VALUE ||
-    accountFilter !== ALL_VALUE;
+    accountFilter !== ALL_VALUE ||
+    !isLive;
 
   const openCreate = () => {
     setEditing(undefined);
@@ -79,8 +89,8 @@ export default function ExpensesPage() {
     setFormOpen(true);
   };
 
-  const columns: DataTableColumn<Expense>[] = React.useMemo(
-    () => [
+  const columns: DataTableColumn<Expense>[] = React.useMemo(() => {
+    const result: DataTableColumn<Expense>[] = [
       {
         id: "date",
         header: "Date",
@@ -145,7 +155,9 @@ export default function ExpensesPage() {
         ),
         sortValue: (row) => row.amount,
       },
-      {
+    ];
+    if (isLive) {
+      result.push({
         id: "actions",
         header: "",
         align: "right",
@@ -155,10 +167,10 @@ export default function ExpensesPage() {
             onDelete={() => setDeleting(row)}
           />
         ),
-      },
-    ],
-    [accountName, categoryName, currency],
-  );
+      });
+    }
+    return result;
+  }, [accountName, categoryName, currency, isLive]);
 
   return (
     <>
@@ -193,7 +205,7 @@ export default function ExpensesPage() {
               columns={columns}
               getRowId={(row) => row.id}
               searchPlaceholder="Search merchant, notes…"
-              onRowClick={openEdit}
+              onRowClick={isLive ? openEdit : undefined}
               server={{
                 total: result.total,
                 page: result.page,
@@ -209,6 +221,13 @@ export default function ExpensesPage() {
               }}
               toolbar={
                 <>
+                  <FilterSelect
+                    value={yearFilter}
+                    onChange={setYearFilter}
+                    options={yearOptions}
+                    allLabel={`${CURRENT_YEAR} (Live)`}
+                    placeholder="Year"
+                  />
                   <FilterSelect
                     value={categoryFilter}
                     onChange={setCategoryFilter}
