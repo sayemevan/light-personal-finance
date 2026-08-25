@@ -117,6 +117,27 @@ export const createLoanPaymentSchema = z.object({
   notes: optionalText,
 });
 
+export const investmentTransactionDirectionSchema = z.enum(["income", "loss"]);
+
+export const createInvestmentTransactionSchema = z
+  .object({
+    investmentId: z.string().min(1),
+    date: isoDate,
+    amount,
+    direction: investmentTransactionDirectionSchema,
+    accountId: z.string().optional(),
+    notes: optionalText,
+  })
+  .superRefine((value, ctx) => {
+    if (value.direction === "income" && !value.accountId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["accountId"],
+        message: "Select an account",
+      });
+    }
+  });
+
 const nonNegativeAmount = z.coerce
   .number()
   .finite()
@@ -159,6 +180,9 @@ export type CreateAccountInput = z.infer<typeof createAccountSchema>;
 export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
 export type CreateLoanInput = z.infer<typeof createLoanSchema>;
 export type CreateLoanPaymentInput = z.infer<typeof createLoanPaymentSchema>;
+export type CreateInvestmentTransactionInput = z.infer<
+  typeof createInvestmentTransactionSchema
+>;
 export type CreateInvestmentInput = z.infer<typeof createInvestmentSchema>;
 export type CreateAssetInput = z.infer<typeof createAssetSchema>;
 export type ListQuery = z.infer<typeof listQuerySchema>;

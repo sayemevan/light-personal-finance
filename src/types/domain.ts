@@ -28,6 +28,8 @@ export type LoanStatus = "active" | "settled" | "overdue";
 
 export type LoanPaymentDirection = "payment" | "receipt";
 
+export type InvestmentTransactionDirection = "income" | "loss";
+
 export type InvestmentType =
   | "stocks"
   | "mutual_fund"
@@ -148,6 +150,21 @@ export interface Investment {
   gain?: number;
   /** Derived, not persisted: gain as a percentage of amountInvested. */
   returnPct?: number;
+}
+
+export interface InvestmentTransaction {
+  id: string;
+  investmentId: string;
+  date: ISODateString;
+  amount: number;
+  direction: InvestmentTransactionDirection;
+  /**
+   * For income entries: the account the money was added to. Not used for loss
+   * entries (a loss reduces the investment's current value, not an account).
+   */
+  accountId?: string;
+  notes?: string;
+  createdAt: ISODateTimeString;
 }
 
 export interface Asset {

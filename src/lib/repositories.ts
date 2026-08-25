@@ -11,6 +11,8 @@ import type {
   Expense,
   Income,
   Investment,
+  InvestmentTransaction,
+  InvestmentTransactionDirection,
   InvestmentType,
   Loan,
   LoanPayment,
@@ -194,6 +196,29 @@ const investmentCodec: RowCodec<Investment> = {
   }),
 };
 
+const investmentTransactionCodec: RowCodec<InvestmentTransaction> = {
+  toRow: (t) => [
+    t.id,
+    t.investmentId,
+    t.date,
+    t.amount,
+    t.direction,
+    t.accountId ?? "",
+    t.notes ?? "",
+    t.createdAt,
+  ],
+  fromRow: (r) => ({
+    id: cell.str(r[0]),
+    investmentId: cell.str(r[1]),
+    date: cell.str(r[2]),
+    amount: cell.num(r[3]),
+    direction: (cell.str(r[4]) || "income") as InvestmentTransactionDirection,
+    accountId: cell.optional(r[5]),
+    notes: cell.optional(r[6]),
+    createdAt: cell.str(r[7]),
+  }),
+};
+
 const assetCodec: RowCodec<Asset> = {
   toRow: (a) => [
     a.id,
@@ -260,6 +285,13 @@ export const investmentsRepo = new SheetRepository<Investment>(
   SHEET_COLUMNS[SHEET_TABS.investments].length,
   investmentCodec,
 );
+
+export const investmentTransactionsRepo =
+  new SheetRepository<InvestmentTransaction>(
+    SHEET_TABS.investmentTransactions,
+    SHEET_COLUMNS[SHEET_TABS.investmentTransactions].length,
+    investmentTransactionCodec,
+  );
 
 export const assetsRepo = new SheetRepository<Asset>(
   SHEET_TABS.assets,

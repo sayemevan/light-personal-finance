@@ -6,6 +6,7 @@ import {
   expensesRepo,
   incomeRepo,
   investmentsRepo,
+  investmentTransactionsRepo,
   loansRepo,
   loanPaymentsRepo,
 } from "@/lib/repositories";
@@ -14,6 +15,7 @@ import {
   buildMonthlySeries,
   computeAccountBalance,
   computeLoanRemaining,
+  sumInvestmentIncomeForAccount,
   sumLoanPaymentsForAccount,
 } from "@/lib/finance";
 import {
@@ -89,16 +91,25 @@ export async function getCategorySummary(): Promise<CategorySummaryRow[]> {
 
 export async function getAccountSummary(): Promise<AccountSummaryRow[]> {
   const spreadsheetId = await getSpreadsheetId();
-  const [accounts, expenses, income, investments, assets, loans, payments] =
-    await Promise.all([
-      accountsRepo.list(spreadsheetId),
-      expensesRepo.list(spreadsheetId),
-      incomeRepo.list(spreadsheetId),
-      investmentsRepo.list(spreadsheetId),
-      assetsRepo.list(spreadsheetId),
-      loansRepo.list(spreadsheetId),
-      loanPaymentsRepo.list(spreadsheetId),
-    ]);
+  const [
+    accounts,
+    expenses,
+    income,
+    investments,
+    assets,
+    loans,
+    payments,
+    investmentTransactions,
+  ] = await Promise.all([
+    accountsRepo.list(spreadsheetId),
+    expensesRepo.list(spreadsheetId),
+    incomeRepo.list(spreadsheetId),
+    investmentsRepo.list(spreadsheetId),
+    assetsRepo.list(spreadsheetId),
+    loansRepo.list(spreadsheetId),
+    loanPaymentsRepo.list(spreadsheetId),
+    investmentTransactionsRepo.list(spreadsheetId),
+  ]);
 
   return accounts.map((account) => {
     const accountLoans = loans.filter((l) => l.accountId === account.id);
@@ -107,9 +118,13 @@ export async function getAccountSummary(): Promise<AccountSummaryRow[]> {
       loans,
       payments,
     );
+    const investmentIncomeIn = sumInvestmentIncomeForAccount(
+      account.id,
+      investmentTransactions,
+    );
 
-    // Inflow includes income, borrowed principal received, and repayments
-    // received on money lent out.
+    // Inflow includes income, borrowed principal received, repayments received
+    // on money lent out, and investment income received into this account.
     const inflow =
       income
         .filter((i) => i.accountId === account.id)
@@ -117,7 +132,8 @@ export async function getAccountSummary(): Promise<AccountSummaryRow[]> {
       accountLoans
         .filter((l) => l.type === "borrowed")
         .reduce((sum, l) => sum + l.principal, 0) +
-      receiptsIn;
+      receiptsIn +
+      investmentIncomeIn;
     // Outflow includes ordinary expenses, money spent buying investments/assets
     // funded from this account, principal lent out, and repayments made on money
     // borrowed.
@@ -148,6 +164,7 @@ export async function getAccountSummary(): Promise<AccountSummaryRow[]> {
         assets,
         loans,
         payments,
+        investmentTransactions,
       ),
     };
   });

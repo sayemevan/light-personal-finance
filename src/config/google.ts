@@ -33,6 +33,7 @@ export const SHEET_TABS = {
   loans: "Loans",
   loanPayments: "Loan Payments",
   investments: "Investments",
+  investmentTransactions: "Investment Transactions",
   assets: "Assets",
   settings: "Settings",
 } as const;
@@ -119,6 +120,16 @@ export const SHEET_COLUMNS = {
     "createdAt",
     "accountId",
   ],
+  [SHEET_TABS.investmentTransactions]: [
+    "id",
+    "investmentId",
+    "date",
+    "amount",
+    "direction",
+    "accountId",
+    "notes",
+    "createdAt",
+  ],
   [SHEET_TABS.assets]: [
     "id",
     "name",
@@ -133,4 +144,4 @@ export const SHEET_COLUMNS = {
 } as const;
 
 /** Bumped whenever the sheet schema changes; drives non-destructive migrations. */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;

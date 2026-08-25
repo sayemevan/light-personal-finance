@@ -1,13 +1,20 @@
 import "server-only";
-import { investmentsRepo } from "@/lib/repositories";
+import {
+  investmentsRepo,
+  investmentTransactionsRepo,
+} from "@/lib/repositories";
 import { getSpreadsheetId } from "@/lib/google/workspace";
 import {
   computeInvestmentGain,
   computeInvestmentReturnPct,
 } from "@/lib/finance";
 import { generateId } from "@/lib/id";
-import type { Investment } from "@/types/domain";
-import type { CreateInvestmentInput } from "@/lib/schemas";
+import { AppError } from "@/lib/errors";
+import type { Investment, InvestmentTransaction } from "@/types/domain";
+import type {
+  CreateInvestmentInput,
+  CreateInvestmentTransactionInput,
+} from "@/lib/schemas";
 
 /** Attach derived gain / return figures to an investment. */
 function withDerived(investment: Investment): Investment {
@@ -25,6 +32,20 @@ export async function listInvestments(): Promise<Investment[]> {
   return investments
     .map(withDerived)
     .sort((a, b) => b.purchaseDate.localeCompare(a.purchaseDate));
+}
+
+export async function getInvestment(
+  id: string,
+): Promise<Investment & { transactions: InvestmentTransaction[] }> {
+  const spreadsheetId = await getSpreadsheetId();
+  const investment = await investmentsRepo.findById(spreadsheetId, id);
+  if (!investment) throw AppError.notFound("Investment not found.");
+
+  const transactions = (await investmentTransactionsRepo.list(spreadsheetId))
+    .filter((t) => t.investmentId === id)
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+  return { ...withDerived(investment), transactions };
 }
 
 export async function createInvestment(
@@ -55,5 +76,89 @@ export async function updateInvestment(
 
 export async function deleteInvestment(id: string): Promise<void> {
   const spreadsheetId = await getSpreadsheetId();
+
+  // Remove associated transactions first so no orphans linger.
+  const transactions = (
+    await investmentTransactionsRepo.list(spreadsheetId)
+  ).filter((t) => t.investmentId === id);
+  for (const transaction of transactions) {
+    await investmentTransactionsRepo.remove(spreadsheetId, transaction.id);
+  }
+
   await investmentsRepo.remove(spreadsheetId, id);
+}
+
+/**
+ * Record an income or loss against an investment.
+ *   • income → money received into the chosen account (account balance rises);
+ *     the investment's current value is left unchanged.
+ *   • loss → the investment's current value is reduced by the amount; no
+ *     account is touched.
+ */
+export async function addInvestmentTransaction(
+  input: CreateInvestmentTransactionInput,
+): Promise<InvestmentTransaction> {
+  const spreadsheetId = await getSpreadsheetId();
+
+  const investment = await investmentsRepo.findById(
+    spreadsheetId,
+    input.investmentId,
+  );
+  if (!investment) throw AppError.notFound("Investment not found.");
+
+  const transaction: InvestmentTransaction = {
+    id: generateId(),
+    investmentId: input.investmentId,
+    date: input.date,
+    amount: input.amount,
+    direction: input.direction,
+    accountId: input.direction === "income" ? input.accountId : undefined,
+    notes: input.notes,
+    createdAt: new Date().toISOString(),
+  };
+
+  const created = await investmentTransactionsRepo.create(
+    spreadsheetId,
+    transaction,
+  );
+
+  if (input.direction === "loss") {
+    const nextValue = Math.max(
+      0,
+      Number((investment.currentValue - input.amount).toFixed(2)),
+    );
+    await investmentsRepo.update(spreadsheetId, investment.id, {
+      currentValue: nextValue,
+    });
+  }
+
+  return created;
+}
+
+export async function deleteInvestmentTransaction(id: string): Promise<void> {
+  const spreadsheetId = await getSpreadsheetId();
+
+  const transaction = await investmentTransactionsRepo.findById(
+    spreadsheetId,
+    id,
+  );
+  if (!transaction) throw AppError.notFound("Transaction not found.");
+
+  // Reversing a loss restores the value it removed from the investment.
+  if (transaction.direction === "loss") {
+    const investment = await investmentsRepo.findById(
+      spreadsheetId,
+      transaction.investmentId,
+    );
+    if (investment) {
+      const restored = Number(
+        (investment.currentValue + transaction.amount).toFixed(2),
+      );
+      await investmentsRepo.update(spreadsheetId, investment.id, {
+        currentValue: restored,
+      });
+    }
+  }
+
+  await investmentTransactionsRepo.remove(spreadsheetId, id);
 }

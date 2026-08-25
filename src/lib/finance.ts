@@ -4,6 +4,7 @@ import type {
   Expense,
   Income,
   Investment,
+  InvestmentTransaction,
   Loan,
   LoanPayment,
   MonthlyPoint,
@@ -54,6 +55,19 @@ export function sumLoanPaymentsForAccount(
   };
 }
 
+/** Investment income credited to a specific account. */
+export function sumInvestmentIncomeForAccount(
+  accountId: string,
+  investmentTransactions: InvestmentTransaction[],
+): number {
+  return sumBy(
+    investmentTransactions.filter(
+      (t) => t.direction === "income" && t.accountId === accountId,
+    ),
+    (t) => t.amount,
+  );
+}
+
 /**
  * Current balance = opening balance + income in − expense out − money spent
  * buying investments/assets that were funded from this account, plus the effect
@@ -61,6 +75,7 @@ export function sumLoanPaymentsForAccount(
  *   • lending money out reduces the balance (and repayments received add it back)
  *   • borrowing money in raises the balance (and repayments made reduce it)
  * Repayments use the payment's own account when set, otherwise the loan's.
+ * Investment income received into an account raises its balance.
  */
 export function computeAccountBalance(
   account: Account,
@@ -70,6 +85,7 @@ export function computeAccountBalance(
   assets: Asset[] = [],
   loans: Loan[] = [],
   loanPayments: LoanPayment[] = [],
+  investmentTransactions: InvestmentTransaction[] = [],
 ): number {
   const inflow = sumBy(
     income.filter((i) => i.accountId === account.id),
@@ -104,12 +120,17 @@ export function computeAccountBalance(
     loans,
     loanPayments,
   );
+  const investmentIncomeIn = sumInvestmentIncomeForAccount(
+    account.id,
+    investmentTransactions,
+  );
 
   return (
     account.openingBalance +
     inflow +
     borrowedIn +
-    receiptsIn -
+    receiptsIn +
+    investmentIncomeIn -
     outflow -
     investmentOutflow -
     assetOutflow -

@@ -5,6 +5,7 @@ import {
   expensesRepo,
   incomeRepo,
   investmentsRepo,
+  investmentTransactionsRepo,
   loansRepo,
   loanPaymentsRepo,
 } from "@/lib/repositories";
@@ -17,16 +18,25 @@ import type { CreateAccountInput } from "@/lib/schemas";
 /** List accounts with their computed current balance. */
 export async function listAccounts(): Promise<Account[]> {
   const spreadsheetId = await getSpreadsheetId();
-  const [accounts, expenses, income, investments, assets, loans, payments] =
-    await Promise.all([
-      accountsRepo.list(spreadsheetId),
-      expensesRepo.list(spreadsheetId),
-      incomeRepo.list(spreadsheetId),
-      investmentsRepo.list(spreadsheetId),
-      assetsRepo.list(spreadsheetId),
-      loansRepo.list(spreadsheetId),
-      loanPaymentsRepo.list(spreadsheetId),
-    ]);
+  const [
+    accounts,
+    expenses,
+    income,
+    investments,
+    assets,
+    loans,
+    payments,
+    investmentTransactions,
+  ] = await Promise.all([
+    accountsRepo.list(spreadsheetId),
+    expensesRepo.list(spreadsheetId),
+    incomeRepo.list(spreadsheetId),
+    investmentsRepo.list(spreadsheetId),
+    assetsRepo.list(spreadsheetId),
+    loansRepo.list(spreadsheetId),
+    loanPaymentsRepo.list(spreadsheetId),
+    investmentTransactionsRepo.list(spreadsheetId),
+  ]);
   return accounts.map((account) => ({
     ...account,
     currentBalance: computeAccountBalance(
@@ -37,6 +47,7 @@ export async function listAccounts(): Promise<Account[]> {
       assets,
       loans,
       payments,
+      investmentTransactions,
     ),
   }));
 }

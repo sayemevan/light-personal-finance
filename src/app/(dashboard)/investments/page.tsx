@@ -1,7 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { LineChart, Plus, TrendingDown, TrendingUp, Wallet } from "lucide-react";
+import {
+  Eye,
+  LineChart,
+  Plus,
+  TrendingDown,
+  TrendingUp,
+  Wallet,
+} from "lucide-react";
 
 import {
   useInvestments,
@@ -29,7 +36,9 @@ import {
 import { FilterSelect, ALL_VALUE } from "@/components/shared/filter-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { InvestmentFormDialog } from "@/components/forms/investment-form-dialog";
+import { InvestmentDetailSheet } from "@/components/investments/investment-detail-sheet";
 
 function formatPercent(value: number): string {
   const sign = value > 0 ? "+" : "";
@@ -45,6 +54,7 @@ export default function InvestmentsPage() {
   const [formOpen, setFormOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<Investment | undefined>();
   const [deleting, setDeleting] = React.useState<Investment | undefined>();
+  const [detailId, setDetailId] = React.useState<string | undefined>();
   const [typeFilter, setTypeFilter] = React.useState(ALL_VALUE);
 
   const openCreate = () => {
@@ -55,6 +65,7 @@ export default function InvestmentsPage() {
     setEditing(investment);
     setFormOpen(true);
   };
+  const openDetail = (investment: Investment) => setDetailId(investment.id);
 
   const columns: DataTableColumn<Investment>[] = React.useMemo(
     () => [
@@ -141,7 +152,12 @@ export default function InvestmentsPage() {
           <RowActions
             onEdit={() => openEdit(row)}
             onDelete={() => setDeleting(row)}
-          />
+          >
+            <DropdownMenuItem onClick={() => openDetail(row)}>
+              <Eye className="h-4 w-4" />
+              View details
+            </DropdownMenuItem>
+          </RowActions>
         ),
       },
     ],
@@ -189,7 +205,7 @@ export default function InvestmentsPage() {
                 columns={columns}
                 getRowId={(row) => row.id}
                 searchPlaceholder="Search investments…"
-                onRowClick={openEdit}
+                onRowClick={openDetail}
                 toolbar={
                   <FilterSelect
                     value={typeFilter}
@@ -208,6 +224,11 @@ export default function InvestmentsPage() {
         open={formOpen}
         onOpenChange={setFormOpen}
         investment={editing}
+      />
+      <InvestmentDetailSheet
+        investmentId={detailId}
+        open={Boolean(detailId)}
+        onOpenChange={(open) => !open && setDetailId(undefined)}
       />
       <ConfirmDialog
         open={Boolean(deleting)}

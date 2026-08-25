@@ -5,6 +5,7 @@ import {
   expensesRepo,
   incomeRepo,
   investmentsRepo,
+  investmentTransactionsRepo,
   loansRepo,
   loanPaymentsRepo,
 } from "@/lib/repositories";
@@ -23,16 +24,25 @@ const UPCOMING_LIMIT = 5;
 /** Build the full dashboard payload from the underlying tabs. */
 export async function getDashboardSummary(): Promise<DashboardSummary> {
   const spreadsheetId = await getSpreadsheetId();
-  const [accounts, expenses, income, loans, payments, investments, assets] =
-    await Promise.all([
-      accountsRepo.list(spreadsheetId),
-      expensesRepo.list(spreadsheetId),
-      incomeRepo.list(spreadsheetId),
-      loansRepo.list(spreadsheetId),
-      loanPaymentsRepo.list(spreadsheetId),
-      investmentsRepo.list(spreadsheetId),
-      assetsRepo.list(spreadsheetId),
-    ]);
+  const [
+    accounts,
+    expenses,
+    income,
+    loans,
+    payments,
+    investments,
+    assets,
+    investmentTransactions,
+  ] = await Promise.all([
+    accountsRepo.list(spreadsheetId),
+    expensesRepo.list(spreadsheetId),
+    incomeRepo.list(spreadsheetId),
+    loansRepo.list(spreadsheetId),
+    loanPaymentsRepo.list(spreadsheetId),
+    investmentsRepo.list(spreadsheetId),
+    assetsRepo.list(spreadsheetId),
+    investmentTransactionsRepo.list(spreadsheetId),
+  ]);
 
   const currentMonth = monthKey(new Date().toISOString());
   const todayISO = new Date().toISOString().slice(0, 10);
@@ -48,6 +58,7 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
         assets,
         loans,
         payments,
+        investmentTransactions,
       ),
     0,
   );
