@@ -117,6 +117,12 @@ export interface LoanPayment {
   date: ISODateString;
   amount: number;
   direction: LoanPaymentDirection;
+  /**
+   * Account the repayment moved through: deducted from on a payment, or
+   * credited on a receipt. Falls back to the parent loan's account when empty
+   * (legacy rows written before this field existed).
+   */
+  accountId?: string;
   notes?: string;
   createdAt: ISODateTimeString;
 }

@@ -9,6 +9,7 @@ import {
   type CreateLoanPaymentInput,
 } from "@/lib/schemas";
 import { useAddLoanPayment } from "@/hooks/use-loans";
+import { useLookups } from "@/hooks/use-lookups";
 import type { LoanPaymentDirection } from "@/types/domain";
 import { Form } from "@/components/ui/form";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ import {
 import {
   DateField,
   NumberField,
+  SelectField,
   TextareaField,
 } from "@/components/forms/fields";
 
@@ -31,6 +33,7 @@ interface LoanPaymentFormDialogProps {
   onOpenChange: (open: boolean) => void;
   loanId: string;
   direction: LoanPaymentDirection;
+  defaultAccountId?: string;
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -40,8 +43,16 @@ export function LoanPaymentFormDialog({
   onOpenChange,
   loanId,
   direction,
+  defaultAccountId,
 }: LoanPaymentFormDialogProps) {
   const addPayment = useAddLoanPayment();
+  const { accountOptions } = useLookups();
+
+  const isPaying = direction === "payment";
+  const accountLabel = isPaying ? "Pay from account" : "Receive in account";
+  const accountDescription = isPaying
+    ? "This amount is deducted from the account you choose, and the remaining loan goes down by the same amount."
+    : "This amount is added to the account you choose, and the remaining loan goes down by the same amount.";
 
   const form = useForm<CreateLoanPaymentInput>({
     resolver: zodResolver(createLoanPaymentSchema),
@@ -50,6 +61,7 @@ export function LoanPaymentFormDialog({
       date: today(),
       amount: undefined,
       direction,
+      accountId: defaultAccountId ?? "",
       notes: "",
     },
   });
@@ -61,10 +73,11 @@ export function LoanPaymentFormDialog({
       date: today(),
       amount: undefined,
       direction,
+      accountId: defaultAccountId ?? "",
       notes: "",
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, loanId, direction]);
+  }, [open, loanId, direction, defaultAccountId]);
 
   const onSubmit = (values: CreateLoanPaymentInput) => {
     addPayment.mutate(values, { onSuccess: () => onOpenChange(false) });
@@ -75,11 +88,12 @@ export function LoanPaymentFormDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {direction === "payment" ? "Record payment" : "Record receipt"}
+            {isPaying ? "Pay back loan" : "Record receipt"}
           </DialogTitle>
           <DialogDescription>
-            Add a repayment against this loan. The remaining balance updates
-            automatically.
+            {isPaying
+              ? "Choose which account you are paying from. The loan remaining and that account both go down."
+              : "Choose which account receives this repayment. The loan remaining goes down and that account goes up."}
           </DialogDescription>
         </DialogHeader>
 
@@ -94,6 +108,14 @@ export function LoanPaymentFormDialog({
                 placeholder="0.00"
               />
             </div>
+            <SelectField
+              control={form.control}
+              name="accountId"
+              label={accountLabel}
+              placeholder="Select account"
+              description={accountDescription}
+              options={accountOptions}
+            />
             <TextareaField
               control={form.control}
               name="notes"

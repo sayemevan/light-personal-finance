@@ -24,13 +24,43 @@ function sumBy<T>(items: T[], pick: (item: T) => number): number {
   return items.reduce((total, item) => total + pick(item), 0);
 }
 
+/** Account a repayment moved through, falling back to the parent loan. */
+export function resolveLoanPaymentAccountId(
+  payment: LoanPayment,
+  loanById: Map<string, Loan>,
+): string | undefined {
+  return payment.accountId ?? loanById.get(payment.loanId)?.accountId;
+}
+
+/** Receipts credited to / payments deducted from a specific account. */
+export function sumLoanPaymentsForAccount(
+  accountId: string,
+  loans: Loan[],
+  loanPayments: LoanPayment[],
+): { receiptsIn: number; paymentsOut: number } {
+  const loanById = new Map(loans.map((loan) => [loan.id, loan]));
+  const forAccount = loanPayments.filter(
+    (payment) => resolveLoanPaymentAccountId(payment, loanById) === accountId,
+  );
+  return {
+    receiptsIn: sumBy(
+      forAccount.filter((payment) => payment.direction === "receipt"),
+      (payment) => payment.amount,
+    ),
+    paymentsOut: sumBy(
+      forAccount.filter((payment) => payment.direction === "payment"),
+      (payment) => payment.amount,
+    ),
+  };
+}
+
 /**
  * Current balance = opening balance + income in − expense out − money spent
  * buying investments/assets that were funded from this account, plus the effect
  * of loans that moved money through this account:
  *   • lending money out reduces the balance (and repayments received add it back)
  *   • borrowing money in raises the balance (and repayments made reduce it)
- * Loan repayments are assumed to flow through the loan's own account.
+ * Repayments use the payment's own account when set, otherwise the loan's.
  */
 export function computeAccountBalance(
   account: Account,
@@ -59,8 +89,6 @@ export function computeAccountBalance(
   );
 
   const accountLoans = loans.filter((l) => l.accountId === account.id);
-  const loanIds = new Set(accountLoans.map((l) => l.id));
-  const accountPayments = loanPayments.filter((p) => loanIds.has(p.loanId));
 
   // Principal that left the account when lending, or entered when borrowing.
   const lentOut = sumBy(
@@ -71,15 +99,10 @@ export function computeAccountBalance(
     accountLoans.filter((l) => l.type === "borrowed"),
     (l) => l.principal,
   );
-  // Repayments received on lent loans return money; repayments made on borrowed
-  // loans send money out.
-  const receiptsIn = sumBy(
-    accountPayments.filter((p) => p.direction === "receipt"),
-    (p) => p.amount,
-  );
-  const paymentsOut = sumBy(
-    accountPayments.filter((p) => p.direction === "payment"),
-    (p) => p.amount,
+  const { receiptsIn, paymentsOut } = sumLoanPaymentsForAccount(
+    account.id,
+    loans,
+    loanPayments,
   );
 
   return (

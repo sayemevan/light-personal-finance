@@ -113,6 +113,7 @@ export const createLoanPaymentSchema = z.object({
   date: isoDate,
   amount,
   direction: loanPaymentDirectionSchema,
+  accountId: z.string().min(1, "Select an account"),
   notes: optionalText,
 });
 

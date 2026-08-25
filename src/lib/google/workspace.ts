@@ -57,8 +57,10 @@ export async function ensureFinanceWorkspace(): Promise<FinanceWorkspace> {
     spreadsheetId = await createFinanceSpreadsheet(rootFolderId);
   } else {
     // Non-destructive migration: make sure tabs added in later schema versions
-    // (e.g. Investments) exist and have their header row on pre-existing sheets.
+    // exist, and that existing tabs have any columns appended since they were
+    // created (e.g. accountId on Loan Payments).
     await ensureSheetTabs(spreadsheetId);
+    await ensureSheetHeaders(spreadsheetId);
   }
 
   return { rootFolderId, spreadsheetId, receiptsFolderId, reportsFolderId };
@@ -105,6 +107,41 @@ async function ensureSheetTabs(spreadsheetId: string): Promise<void> {
   if (headerData.length > 0) {
     await sheets_batchUpdateValues(spreadsheetId, headerData);
   }
+}
+
+/**
+ * Rewrite header rows that are missing columns appended in later schema
+ * versions. Existing data rows are left untouched; new cells stay empty until
+ * a record is written with the extra field.
+ */
+async function ensureSheetHeaders(spreadsheetId: string): Promise<void> {
+  const sheets = await getSheetsClient();
+  const hasColumns = (tab: string): tab is keyof typeof SHEET_COLUMNS =>
+    tab in SHEET_COLUMNS;
+  const tabs = Object.values(SHEET_TABS).filter(hasColumns);
+
+  const res = await sheets.spreadsheets.values.batchGet({
+    spreadsheetId,
+    ranges: tabs.map((tab) => `${tab}!1:1`),
+  });
+
+  const stale = tabs.filter((tab, index) => {
+    const headers =
+      (res.data.valueRanges?.[index]?.values?.[0] as string[] | undefined) ??
+      [];
+    const expected = SHEET_COLUMNS[tab];
+    return expected.some((column, columnIndex) => headers[columnIndex] !== column);
+  });
+
+  if (stale.length === 0) return;
+
+  await sheets_batchUpdateValues(
+    spreadsheetId,
+    stale.map((tab) => ({
+      range: `${tab}!A1`,
+      values: [[...SHEET_COLUMNS[tab]]],
+    })),
+  );
 }
 
 /** Resolve (and cache) the workspace for the currently signed-in user. */

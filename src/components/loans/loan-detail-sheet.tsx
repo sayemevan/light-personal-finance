@@ -85,7 +85,7 @@ export function LoanDetailSheet({
 
               {loan.accountId ? (
                 <p className="mt-2 text-sm text-muted-foreground">
-                  {loan.type === "lent" ? "Paid from" : "Received in"}:{" "}
+                  {loan.type === "lent" ? "Taken from" : "Added to"}:{" "}
                   {accountName(loan.accountId)}
                 </p>
               ) : null}
@@ -127,6 +127,11 @@ export function LoanDetailSheet({
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {formatDate(payment.date)}
+                          {payment.accountId
+                            ? ` · ${payment.direction === "receipt" ? "to" : "from"} ${accountName(payment.accountId)}`
+                            : loan.accountId
+                              ? ` · ${loan.type === "lent" ? "to" : "from"} ${accountName(loan.accountId)}`
+                              : ""}
                           {payment.notes ? ` · ${payment.notes}` : ""}
                         </p>
                       </div>
@@ -155,6 +160,7 @@ export function LoanDetailSheet({
           onOpenChange={setPaymentOpen}
           loanId={loan.id}
           direction={direction}
+          defaultAccountId={loan.accountId}
         />
       ) : null}
     </>

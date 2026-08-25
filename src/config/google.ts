@@ -106,6 +106,7 @@ export const SHEET_COLUMNS = {
     "direction",
     "notes",
     "createdAt",
+    "accountId",
   ],
   [SHEET_TABS.investments]: [
     "id",
@@ -132,4 +133,4 @@ export const SHEET_COLUMNS = {
 } as const;
 
 /** Bumped whenever the sheet schema changes; drives non-destructive migrations. */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;

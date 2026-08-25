@@ -14,6 +14,7 @@ import {
   buildMonthlySeries,
   computeAccountBalance,
   computeLoanRemaining,
+  sumLoanPaymentsForAccount,
 } from "@/lib/finance";
 import {
   ASSET_CATEGORY_LABELS,
@@ -101,8 +102,11 @@ export async function getAccountSummary(): Promise<AccountSummaryRow[]> {
 
   return accounts.map((account) => {
     const accountLoans = loans.filter((l) => l.accountId === account.id);
-    const loanIds = new Set(accountLoans.map((l) => l.id));
-    const accountPayments = payments.filter((p) => loanIds.has(p.loanId));
+    const { receiptsIn, paymentsOut } = sumLoanPaymentsForAccount(
+      account.id,
+      loans,
+      payments,
+    );
 
     // Inflow includes income, borrowed principal received, and repayments
     // received on money lent out.
@@ -113,9 +117,7 @@ export async function getAccountSummary(): Promise<AccountSummaryRow[]> {
       accountLoans
         .filter((l) => l.type === "borrowed")
         .reduce((sum, l) => sum + l.principal, 0) +
-      accountPayments
-        .filter((p) => p.direction === "receipt")
-        .reduce((sum, p) => sum + p.amount, 0);
+      receiptsIn;
     // Outflow includes ordinary expenses, money spent buying investments/assets
     // funded from this account, principal lent out, and repayments made on money
     // borrowed.
@@ -132,9 +134,7 @@ export async function getAccountSummary(): Promise<AccountSummaryRow[]> {
       accountLoans
         .filter((l) => l.type === "lent")
         .reduce((sum, l) => sum + l.principal, 0) +
-      accountPayments
-        .filter((p) => p.direction === "payment")
-        .reduce((sum, p) => sum + p.amount, 0);
+      paymentsOut;
     return {
       accountId: account.id,
       name: account.name,

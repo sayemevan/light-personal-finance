@@ -155,6 +155,7 @@ const loanPaymentCodec: RowCodec<LoanPayment> = {
     p.direction,
     p.notes ?? "",
     p.createdAt,
+    p.accountId ?? "",
   ],
   fromRow: (r) => ({
     id: cell.str(r[0]),
@@ -164,6 +165,7 @@ const loanPaymentCodec: RowCodec<LoanPayment> = {
     direction: (cell.str(r[4]) || "payment") as LoanPaymentDirection,
     notes: cell.optional(r[5]),
     createdAt: cell.str(r[6]),
+    accountId: cell.optional(r[7]),
   }),
 };
 

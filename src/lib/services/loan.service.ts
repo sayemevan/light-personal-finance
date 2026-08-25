@@ -92,6 +92,7 @@ export async function addLoanPayment(
     date: input.date,
     amount: input.amount,
     direction: input.direction,
+    accountId: input.accountId,
     notes: input.notes,
     createdAt: new Date().toISOString(),
   };

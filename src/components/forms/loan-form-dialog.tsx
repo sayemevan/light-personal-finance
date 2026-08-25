@@ -61,8 +61,11 @@ export function LoanFormDialog({
   });
 
   const loanType = form.watch("type");
-  const accountLabel =
-    loanType === "lent" ? "Paid from account" : "Received in account";
+  const isLent = loanType === "lent";
+  const accountLabel = isLent ? "Take from account" : "Add to account";
+  const accountDescription = isLent
+    ? "The amount you lend is deducted from this account."
+    : "The amount you borrow is added to this account (cash, bank, etc.).";
 
   React.useEffect(() => {
     if (!open) return;
@@ -111,7 +114,9 @@ export function LoanFormDialog({
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit loan" : "Add loan"}</DialogTitle>
           <DialogDescription>
-            Track money you borrowed or lent, and its repayment.
+            {isLent
+              ? "Record money you lent someone. Choose which of your accounts it left."
+              : "Record money you borrowed. Choose which of your accounts it was added to. When you pay it back, you will pick which account to pay from."}
           </DialogDescription>
         </DialogHeader>
 
@@ -142,6 +147,7 @@ export function LoanFormDialog({
               name="accountId"
               label={accountLabel}
               placeholder="Select account"
+              description={accountDescription}
               options={accountOptions}
             />
             <div className="grid gap-4 sm:grid-cols-2">
