@@ -46,28 +46,53 @@ async function findArchiveId(
   return findSpreadsheet(archiveConfig(kind).title, rootFolderId);
 }
 
+/** Combine two row sets, keeping live-sheet rows when an id appears in both. */
+function mergeById<T extends { id: string }>(live: T[], archived: T[]): T[] {
+  const seen = new Set(live.map((row) => row.id));
+  return [...live, ...archived.filter((row) => !seen.has(row.id))];
+}
+
 export async function getExpensesForYear(year: string): Promise<Expense[]> {
   const { spreadsheetId, rootFolderId } = await getWorkspaceForCurrentUser();
+  const liveRows = await expensesRepo.list(spreadsheetId);
+
+  // "live" (or the current calendar year) is the working view: show everything
+  // currently in the live sheet, unfiltered by date.
   if (isLiveYear(year)) {
-    return expensesRepo.list(spreadsheetId);
+    return liveRows;
   }
 
+  // For any other year, a row may live in either the archive (past years that
+  // were archived) or still in the live sheet (e.g. a future-dated entry that
+  // was never archived). Include both so nothing disappears based on storage.
+  const liveForYear = liveRows.filter((row) => row.date.startsWith(`${year}-`));
   const archiveId = await findArchiveId("expense", rootFolderId);
-  if (!archiveId) return [];
-  const rows = await expensesRepo.list(archiveId);
-  return rows.filter((row) => row.date.startsWith(`${year}-`));
+  const archiveForYear = archiveId
+    ? (await expensesRepo.list(archiveId)).filter((row) =>
+        row.date.startsWith(`${year}-`),
+      )
+    : [];
+
+  return mergeById(liveForYear, archiveForYear);
 }
 
 export async function getIncomeForYear(year: string): Promise<Income[]> {
   const { spreadsheetId, rootFolderId } = await getWorkspaceForCurrentUser();
+  const liveRows = await incomeRepo.list(spreadsheetId);
+
   if (isLiveYear(year)) {
-    return incomeRepo.list(spreadsheetId);
+    return liveRows;
   }
 
+  const liveForYear = liveRows.filter((row) => row.date.startsWith(`${year}-`));
   const archiveId = await findArchiveId("income", rootFolderId);
-  if (!archiveId) return [];
-  const rows = await incomeRepo.list(archiveId);
-  return rows.filter((row) => row.date.startsWith(`${year}-`));
+  const archiveForYear = archiveId
+    ? (await incomeRepo.list(archiveId)).filter((row) =>
+        row.date.startsWith(`${year}-`),
+      )
+    : [];
+
+  return mergeById(liveForYear, archiveForYear);
 }
 
 async function getYearsForKind(

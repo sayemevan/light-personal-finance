@@ -20,37 +20,48 @@ interface RowActionsProps {
 
 /** Consistent per-row action menu used by every data table. */
 export function RowActions({ onEdit, onDelete, children }: RowActionsProps) {
+  // Rows are often clickable (edit / view details). Because menu clicks bubble
+  // up the React tree — even through Radix's portal — stop propagation here so
+  // opening the menu or picking an item never also triggers the row's onClick.
+  const stop = (event: React.SyntheticEvent) => event.stopPropagation();
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          aria-label="Open actions"
-        >
-          <MoreHorizontal className="h-4 w-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-40">
-        {children}
-        {onEdit ? (
-          <DropdownMenuItem onClick={onEdit}>
-            <Pencil className="h-4 w-4" />
-            Edit
-          </DropdownMenuItem>
-        ) : null}
-        {onEdit && onDelete ? <DropdownMenuSeparator /> : null}
-        {onDelete ? (
-          <DropdownMenuItem
-            onClick={onDelete}
-            className="text-destructive focus:text-destructive"
+    <span
+      className="inline-flex"
+      onClick={stop}
+      onPointerDown={stop}
+    >
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            aria-label="Open actions"
           >
-            <Trash2 className="h-4 w-4" />
-            Delete
-          </DropdownMenuItem>
-        ) : null}
-      </DropdownMenuContent>
-    </DropdownMenu>
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-40">
+          {children}
+          {onEdit ? (
+            <DropdownMenuItem onClick={onEdit}>
+              <Pencil className="h-4 w-4" />
+              Edit
+            </DropdownMenuItem>
+          ) : null}
+          {onEdit && onDelete ? <DropdownMenuSeparator /> : null}
+          {onDelete ? (
+            <DropdownMenuItem
+              onClick={onDelete}
+              className="text-destructive focus:text-destructive"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </DropdownMenuItem>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </span>
   );
 }

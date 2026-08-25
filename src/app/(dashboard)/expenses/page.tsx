@@ -70,7 +70,10 @@ export default function ExpensesPage() {
     year: yearFilter === ALL_VALUE ? CURRENT_YEAR : yearFilter,
   });
 
-  const isLive = yearFilter === ALL_VALUE || yearFilter === CURRENT_YEAR;
+  // Current and future years still live in the working sheet, so their rows
+  // remain editable. Only past (archived) years are read-only.
+  const isLive =
+    yearFilter === ALL_VALUE || Number(yearFilter) >= Number(CURRENT_YEAR);
   const yearOptions = (archiveYears.data?.expense ?? [])
     .filter((year) => year !== CURRENT_YEAR)
     .map((year) => ({ label: year, value: year }));
