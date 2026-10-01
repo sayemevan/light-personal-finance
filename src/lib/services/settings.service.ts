@@ -8,13 +8,29 @@ export interface AppSettings {
   currency: string;
 }
 
+/**
+ * Whether `code` is an ISO 4217 currency `Intl.NumberFormat` can format.
+ * Any malformed value (e.g. "1$ ") makes it throw a RangeError, which would
+ * break every amount the app renders.
+ */
+export function isSupportedCurrency(code: string): boolean {
+  if (!/^[A-Z]{3}$/.test(code)) return false;
+  const supported = (
+    Intl as { supportedValuesOf?: (key: "currency") => string[] }
+  ).supportedValuesOf?.("currency");
+  return supported ? supported.includes(code) : true;
+}
+
 /** Read the Settings key/value tab into a typed object. */
 export async function getSettings(): Promise<AppSettings> {
   const spreadsheetId = await getSpreadsheetId();
   const rows = await readRange(spreadsheetId, `${SHEET_TABS.settings}!A2:B`);
   const map = new Map(rows.map((row) => [row[0], row[1] ?? ""]));
   return {
-    currency: map.get("currency") || DEFAULT_CURRENCY,
+    // Guard against a bad value already saved (or typed into the sheet).
+    currency: isSupportedCurrency(map.get("currency") ?? "")
+      ? (map.get("currency") as string)
+      : DEFAULT_CURRENCY,
   };
 }
 

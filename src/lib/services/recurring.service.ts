@@ -295,21 +295,22 @@ export async function deleteRecurring(id: string): Promise<void> {
 
 /**
  * Create the expense / income / transfer for one occurrence of a rule, dated
- * `date`. Does nothing if that occurrence was already posted.
+ * `date`. Does nothing if that occurrence was already posted (`created` is
+ * then false).
  */
 export async function postOccurrence(
   spreadsheetId: string,
   rule: RecurringRule,
   occurrence: string,
   options: { date?: string; amount?: number; posted?: PostedIds } = {},
-): Promise<string> {
+): Promise<{ id: string; created: boolean }> {
   const id = occurrenceId(rule.id, occurrence);
   const posted = await postedIds(
     spreadsheetId,
     rule.kind,
     options.posted ?? new Map(),
   );
-  if (posted.has(id)) return id;
+  if (posted.has(id)) return { id, created: false };
 
   const date = options.date ?? occurrence;
   const amount = options.amount ?? rule.amount;
@@ -332,7 +333,7 @@ export async function postOccurrence(
         },
         { id },
       );
-      return id;
+      return { id, created: true };
     case "income":
       if (!rule.categoryId) throw AppError.validation("Select a category.");
       await createIncome(
@@ -345,7 +346,7 @@ export async function postOccurrence(
         },
         { id },
       );
-      return id;
+      return { id, created: true };
     case "transfer":
       if (!rule.toAccountId) throw AppError.validation("Select an account.");
       await createTransfer(
@@ -358,7 +359,7 @@ export async function postOccurrence(
         },
         { id },
       );
-      return id;
+      return { id, created: true };
   }
 }
 
@@ -440,12 +441,12 @@ export async function runDueRules(today: string): Promise<RunDueResult> {
       let lastPosted: string | undefined;
       try {
         for (const date of due) {
-          const id = await postOccurrence(spreadsheetId, rule, date, {
+          const result = await postOccurrence(spreadsheetId, rule, date, {
             posted: postedCache,
           });
-          postedNow.push({ kind: rule.kind, id });
+          postedNow.push({ kind: rule.kind, id: result.id });
           lastPosted = date;
-          posted += 1;
+          if (result.created) posted += 1;
         }
       } catch (error) {
         console.error(`[recurring] failed to post rule ${rule.id}`, error);
@@ -486,7 +487,7 @@ export async function confirmOccurrence(
     if (!withinEnd(rule, rule.nextDate)) {
       throw AppError.validation("This schedule has already ended.");
     }
-    const id = await postOccurrence(spreadsheetId, rule, input.date, {
+    const { id } = await postOccurrence(spreadsheetId, rule, input.date, {
       date: input.date > today ? today : input.date,
       amount: input.amount ?? rule.amount,
     });

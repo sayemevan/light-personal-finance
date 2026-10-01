@@ -146,10 +146,12 @@ export function parseAmount(raw: string | undefined | null): number | null {
 
   let negative = false;
 
-  const drCr = text.match(/\b(dr|cr)\.?$/i);
+  // "1,250.00 Dr", "1,250.00Dr" and "500CR" alike. `\b` would miss the
+  // unspaced forms: there is no word boundary between "0" and "D".
+  const drCr = text.match(/(^|[^a-z])(dr|cr)\.?$/i);
   if (drCr) {
-    if (drCr[1]?.toLowerCase() === "dr") negative = true;
-    text = text.slice(0, drCr.index).trim();
+    if (drCr[2]?.toLowerCase() === "dr") negative = true;
+    text = text.slice(0, (drCr.index ?? 0) + (drCr[1]?.length ?? 0)).trim();
   }
 
   if (/^\(.*\)$/.test(text)) {

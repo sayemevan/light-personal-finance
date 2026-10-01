@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorState } from "@/components/shared/error-state";
 import { InvestmentTransactionFormDialog } from "@/components/forms/investment-transaction-form-dialog";
 
 interface InvestmentDetailSheetProps {
@@ -75,7 +76,15 @@ export function InvestmentDetailSheet({
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent className="w-full overflow-y-auto border-l-0 sm:max-w-md sm:border-l">
-          {investmentQuery.isLoading || !investment ? (
+          {investmentQuery.isError ? (
+            // Without this a failed load (e.g. deleted elsewhere) showed the
+            // skeleton forever.
+            <ErrorState
+              title="Couldn't load this investment"
+              description={investmentQuery.error.message}
+              onRetry={() => void investmentQuery.refetch()}
+            />
+          ) : investmentQuery.isLoading || !investment ? (
             <div className="space-y-4">
               <Skeleton className="h-6 w-40" />
               <Skeleton className="h-24 w-full" />

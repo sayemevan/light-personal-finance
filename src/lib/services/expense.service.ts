@@ -49,7 +49,8 @@ export async function listExpenses(
     rows = rows.filter((e) => e.accountId === query.accountId);
   }
   if (query.tag) {
-    const tag = query.tag.toLowerCase();
+    // Stored tags have no "#" (see tagsSchema), so "?tag=#food" must match.
+    const tag = query.tag.trim().replace(/^#+/, "").toLowerCase();
     rows = rows.filter((e) => e.tags?.includes(tag));
   }
 

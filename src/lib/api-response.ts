@@ -28,6 +28,17 @@ export function fail(error: unknown) {
     );
   }
 
+  // `await req.json()` on a malformed body: the client's fault, not a 500.
+  if (error instanceof SyntaxError) {
+    return NextResponse.json<ApiResponse<never>>(
+      {
+        ok: false,
+        error: { code: "VALIDATION", message: "The request body isn't valid JSON." },
+      },
+      { status: 400 },
+    );
+  }
+
   const appError = isAppError(error) ? error : fromGoogleError(error);
   if (appError) {
     if (!isAppError(error)) console.error("[api] google error", error);

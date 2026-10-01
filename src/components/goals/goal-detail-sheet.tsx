@@ -32,6 +32,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorState } from "@/components/shared/error-state";
 import { GoalContributionFormDialog } from "@/components/forms/goal-contribution-form-dialog";
 import {
   GoalPaceText,
@@ -85,7 +86,15 @@ export function GoalDetailSheet({
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent className="w-full overflow-y-auto border-l-0 sm:max-w-md sm:border-l">
-          {goalQuery.isLoading || !goal ? (
+          {goalQuery.isError ? (
+            // Without this a failed load (e.g. deleted elsewhere) showed the
+            // skeleton forever.
+            <ErrorState
+              title="Couldn't load this goal"
+              description={goalQuery.error.message}
+              onRetry={() => void goalQuery.refetch()}
+            />
+          ) : goalQuery.isLoading || !goal ? (
             <div className="space-y-4">
               <Skeleton className="h-6 w-40" />
               <Skeleton className="h-24 w-full" />

@@ -113,6 +113,11 @@ export async function updateTransfer(
   if (from === to) {
     throw AppError.validation("Choose two different accounts.");
   }
+  // Same check as create, for whichever side changed.
+  const changed = [input.fromAccountId, input.toAccountId].filter(
+    (accountId): accountId is string => Boolean(accountId),
+  );
+  if (changed.length > 0) await assertAccounts(spreadsheetId, changed);
   return transfersRepo.update(spreadsheetId, id, input);
 }
 

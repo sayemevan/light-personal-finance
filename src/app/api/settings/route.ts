@@ -3,10 +3,19 @@ import { z } from "zod";
 
 import { ok, fail } from "@/lib/api-response";
 import { requireSession } from "@/lib/auth/session";
-import { getSettings, updateSettings } from "@/lib/services/settings.service";
+import {
+  getSettings,
+  isSupportedCurrency,
+  updateSettings,
+} from "@/lib/services/settings.service";
 
 const updateSettingsSchema = z.object({
-  currency: z.string().length(3).optional(),
+  currency: z
+    .string()
+    .trim()
+    .transform((code) => code.toUpperCase())
+    .refine(isSupportedCurrency, "Choose a valid currency code, e.g. BDT.")
+    .optional(),
 });
 
 export async function GET() {

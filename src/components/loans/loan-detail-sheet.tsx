@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorState } from "@/components/shared/error-state";
 import { LoanPaymentFormDialog } from "@/components/forms/loan-payment-form-dialog";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import type { LoanPayment } from "@/types/domain";
@@ -63,7 +64,15 @@ export function LoanDetailSheet({
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent className="w-full overflow-y-auto border-l-0 sm:max-w-md sm:border-l">
-          {loanQuery.isLoading || !loan ? (
+          {loanQuery.isError ? (
+            // Without this a failed load (e.g. deleted elsewhere) showed the
+            // skeleton forever.
+            <ErrorState
+              title="Couldn't load this loan"
+              description={loanQuery.error.message}
+              onRetry={() => void loanQuery.refetch()}
+            />
+          ) : loanQuery.isLoading || !loan ? (
             <div className="space-y-4">
               <Skeleton className="h-6 w-40" />
               <Skeleton className="h-24 w-full" />
