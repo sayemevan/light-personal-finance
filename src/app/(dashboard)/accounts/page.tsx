@@ -62,17 +62,12 @@ export default function AccountsPage() {
         sortValue: (row) => row.type,
       },
       {
-        id: "currency",
-        header: "Currency",
-        cell: (row) => row.currency,
-      },
-      {
         id: "balance",
         header: "Current balance",
         align: "right",
         cell: (row) => (
           <span className="font-medium">
-            {formatCurrency(row.currentBalance ?? 0, row.currency || currency)}
+            {formatCurrency(row.currentBalance ?? 0, currency)}
           </span>
         ),
         sortValue: (row) => row.currentBalance ?? 0,
@@ -97,12 +92,7 @@ export default function AccountsPage() {
       <PageHeader
         title="Accounts"
         description="Cash, bank, credit cards, mobile banking and custom accounts."
-        actions={
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            Add account
-          </Button>
-        }
+        action={{ label: "Add account", onClick: openCreate }}
       />
 
       <QueryView query={accountsQuery}>

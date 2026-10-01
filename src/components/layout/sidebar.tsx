@@ -4,7 +4,7 @@ import { NavLinks } from "@/components/layout/nav-links";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 
-/** Fixed desktop sidebar. Hidden on small screens (see MobileNav). */
+/** Fixed desktop sidebar. Hidden on small screens (see BottomNav). */
 export function Sidebar() {
   return (
     <aside className="hidden w-64 shrink-0 border-r bg-card md:flex md:flex-col">

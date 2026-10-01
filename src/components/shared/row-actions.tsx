@@ -36,7 +36,7 @@ export function RowActions({ onEdit, onDelete, children }: RowActionsProps) {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+            className="h-10 w-10 rounded-full sm:h-8 sm:w-8 sm:rounded-md"
             aria-label="Open actions"
           >
             <MoreHorizontal className="h-4 w-4" />

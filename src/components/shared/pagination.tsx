@@ -47,20 +47,25 @@ export function Pagination({
   return (
     <div
       className={cn(
-        "flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between",
+        "flex items-center justify-between gap-3",
         className,
       )}
     >
       <p
         className={cn(
-          "text-sm text-muted-foreground",
+          "text-xs text-muted-foreground sm:text-sm",
           isLoading && "opacity-60",
         )}
         aria-live="polite"
       >
         {total === 0
           ? "No results"
-          : `Showing ${start.toLocaleString()}–${end.toLocaleString()} of ${total.toLocaleString()}`}
+          : (
+            <>
+              <span className="hidden sm:inline">Showing </span>
+              {`${start.toLocaleString()}–${end.toLocaleString()} of ${total.toLocaleString()}`}
+            </>
+          )}
       </p>
 
       <div className="flex items-center gap-2">
@@ -70,7 +75,7 @@ export function Pagination({
             onValueChange={(value) => onPageSizeChange(Number(value))}
           >
             <SelectTrigger
-              className="h-9 w-[130px]"
+              className="hidden h-9 w-[130px] sm:flex"
               aria-label="Rows per page"
             >
               <SelectValue />
@@ -85,7 +90,7 @@ export function Pagination({
           </Select>
         ) : null}
 
-        <span className="text-sm text-muted-foreground">
+        <span className="hidden text-sm text-muted-foreground sm:inline">
           Page {currentPage} of {pageCount}
         </span>
 
@@ -93,7 +98,7 @@ export function Pagination({
           <Button
             variant="outline"
             size="icon"
-            className="h-9 w-9"
+            className="h-10 w-10 rounded-full sm:h-9 sm:w-9 sm:rounded-md"
             onClick={() => onPageChange(currentPage - 1)}
             disabled={currentPage <= 1}
             aria-label="Previous page"
@@ -103,7 +108,7 @@ export function Pagination({
           <Button
             variant="outline"
             size="icon"
-            className="h-9 w-9"
+            className="h-10 w-10 rounded-full sm:h-9 sm:w-9 sm:rounded-md"
             onClick={() => onPageChange(currentPage + 1)}
             disabled={currentPage >= pageCount}
             aria-label="Next page"

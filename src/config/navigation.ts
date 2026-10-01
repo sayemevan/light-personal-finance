@@ -92,3 +92,20 @@ export const secondaryNav: NavItem[] = [
     description: "Preferences and account",
   },
 ];
+
+/** Destinations pinned to the mobile bottom bar; the rest live under "More". */
+export const bottomNavHrefs = [
+  "/dashboard",
+  "/expenses",
+  "/income",
+  "/accounts",
+] as const;
+
+const allNav = [...primaryNav, ...secondaryNav];
+
+/** The nav item that owns `pathname`, used for the mobile app bar title. */
+export function findNavItem(pathname: string): NavItem | undefined {
+  return allNav.find(
+    (item) => pathname === item.href || pathname.startsWith(`${item.href}/`),
+  );
+}

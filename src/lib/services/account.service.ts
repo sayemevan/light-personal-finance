@@ -10,6 +10,7 @@ import {
   loanPaymentsRepo,
 } from "@/lib/repositories";
 import { getSpreadsheetId } from "@/lib/google/workspace";
+import { getSettings } from "@/lib/services/settings.service";
 import { computeAccountBalance } from "@/lib/finance";
 import { generateId } from "@/lib/id";
 import type { Account } from "@/types/domain";
@@ -61,7 +62,7 @@ export async function createAccount(
     name: input.name,
     type: input.type,
     openingBalance: input.openingBalance,
-    currency: input.currency,
+    currency: input.currency ?? (await getSettings()).currency,
     isArchived: false,
     createdAt: new Date().toISOString(),
   };

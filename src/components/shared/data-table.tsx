@@ -1,10 +1,23 @@
 "use client";
 
 import * as React from "react";
-import { ArrowDown, ArrowUp, ChevronsUpDown, Search } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ChevronsUpDown,
+  Search,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Pagination } from "@/components/shared/pagination";
 import {
   Table,
@@ -25,7 +38,22 @@ export interface DataTableColumn<T> {
   searchValue?: (row: T) => string;
   align?: "left" | "right" | "center";
   className?: string;
+  /**
+   * Where this column goes in the phone list layout. Defaults: the first
+   * column is the title, the first two right-aligned columns are the trailing
+   * values, an `actions` column is the row menu, and the rest are metadata.
+   */
+  mobile?: MobileSlot;
 }
+
+export type MobileSlot =
+  | "title"
+  | "subtitle"
+  | "meta"
+  | "trailing"
+  | "trailingSub"
+  | "action"
+  | "hidden";
 
 export type DataTableSort = { columnId: string; dir: "asc" | "desc" } | null;
 
@@ -71,6 +99,23 @@ const alignClass = {
   center: "text-center",
 } as const;
 
+/** Resolve each column's slot in the phone list layout. */
+function mobileSlots<T>(columns: DataTableColumn<T>[]): MobileSlot[] {
+  let rightSeen = 0;
+  return columns.map((column, index) => {
+    if (column.mobile) return column.mobile;
+    if (column.id === "actions") return "action";
+    if (index === 0) return "title";
+    if (column.align === "right" && rightSeen < 2) {
+      rightSeen += 1;
+      return rightSeen === 1 ? "trailing" : "trailingSub";
+    }
+    return "meta";
+  });
+}
+
+const NO_SORT = "__none__";
+
 /** Cycle a column through asc → desc → unsorted. */
 function nextSort(prev: DataTableSort, columnId: string): DataTableSort {
   if (prev?.columnId !== columnId) return { columnId, dir: "asc" };
@@ -109,14 +154,15 @@ export function DataTable<T>({
     }
   };
 
-  const toggleSort = (columnId: string) => {
-    const updated = nextSort(sort, columnId);
+  const applySort = (updated: DataTableSort) => {
     if (isServer) server!.onSortChange(updated);
     else {
       setLocalSort(updated);
       setLocalPage(1);
     }
   };
+  const toggleSort = (columnId: string) => applySort(nextSort(sort, columnId));
+  const sortable = columns.filter((column) => column.sortValue);
 
   // In client mode, search + sort the full dataset before paginating it.
   const processed = React.useMemo(() => {
@@ -185,7 +231,7 @@ export function DataTable<T>({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative w-full sm:max-w-xs">
           <Search
-            className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground"
+            className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground sm:left-2.5"
             aria-hidden="true"
           />
           <Input
@@ -194,17 +240,58 @@ export function DataTable<T>({
             onChange={(event) => setSearch(event.target.value)}
             placeholder={searchPlaceholder}
             aria-label={searchPlaceholder}
-            className="pl-8"
+            className="h-11 rounded-full border-transparent bg-muted pl-10 shadow-none sm:h-9 sm:rounded-md sm:border-input sm:bg-transparent sm:pl-8 sm:shadow-sm"
           />
         </div>
-        {toolbar ? (
-          <div className="flex flex-wrap items-center gap-2">{toolbar}</div>
+        {toolbar || sortable.length > 0 ? (
+          // Phones: one horizontally scrolling row of chips.
+          <div className="no-scrollbar -mx-4 flex items-center gap-2 overflow-x-auto px-4 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
+            {sortable.length > 0 ? (
+              <Select
+                value={sort ? `${sort.columnId}:${sort.dir}` : NO_SORT}
+                onValueChange={(value) => {
+                  if (value === NO_SORT) return applySort(null);
+                  const [columnId = "", dir] = value.split(":");
+                  applySort({ columnId, dir: dir === "desc" ? "desc" : "asc" });
+                }}
+              >
+                <SelectTrigger
+                  className="h-9 w-auto shrink-0 gap-2 rounded-full md:hidden [&>span]:shrink-0"
+                  aria-label="Sort by"
+                >
+                  <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_SORT}>Default order</SelectItem>
+                  {sortable.flatMap((column) => [
+                    <SelectItem key={`${column.id}:asc`} value={`${column.id}:asc`}>
+                      {column.header} ↑
+                    </SelectItem>,
+                    <SelectItem key={`${column.id}:desc`} value={`${column.id}:desc`}>
+                      {column.header} ↓
+                    </SelectItem>,
+                  ])}
+                </SelectContent>
+              </Select>
+            ) : null}
+            {toolbar}
+          </div>
         ) : null}
       </div>
 
+      <MobileList
+        rows={rows}
+        columns={columns}
+        getRowId={getRowId}
+        onRowClick={onRowClick}
+        emptyState={emptyState}
+        dimmed={server?.isFetching}
+      />
+
       <div
         className={cn(
-          "rounded-xl border transition-opacity",
+          "hidden rounded-xl border transition-opacity md:block",
           server?.isFetching && "opacity-60",
         )}
       >
@@ -313,5 +400,113 @@ export function DataTable<T>({
         />
       ) : null}
     </div>
+  );
+}
+
+function isBlank(node: React.ReactNode) {
+  return node === null || node === undefined || node === "" || node === "—";
+}
+
+/** Phone layout: a native-style list of two-line rows. */
+function MobileList<T>({
+  rows,
+  columns,
+  getRowId,
+  onRowClick,
+  emptyState,
+  dimmed,
+}: {
+  rows: T[];
+  columns: DataTableColumn<T>[];
+  getRowId: (row: T) => string;
+  onRowClick?: (row: T) => void;
+  emptyState?: React.ReactNode;
+  dimmed?: boolean;
+}) {
+  const slots = mobileSlots(columns);
+  const pick = (slot: MobileSlot) =>
+    columns.filter((_, index) => slots[index] === slot);
+
+  const title = pick("title");
+  const subtitle = [...pick("subtitle"), ...pick("meta")];
+  const trailing = pick("trailing");
+  const trailingSub = pick("trailingSub");
+  const action = pick("action");
+
+  if (rows.length === 0) {
+    return (
+      <div className="overflow-hidden rounded-2xl border md:hidden">
+        {emptyState ?? (
+          <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
+            No results found.
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <ul
+      className={cn(
+        "divide-y overflow-hidden rounded-2xl border bg-card transition-opacity md:hidden",
+        dimmed && "opacity-60",
+      )}
+    >
+      {rows.map((row) => {
+        const details = subtitle
+          .map((column) => ({ id: column.id, node: column.cell(row) }))
+          .filter((item) => !isBlank(item.node));
+        return (
+          <li
+            key={getRowId(row)}
+            onClick={onRowClick ? () => onRowClick(row) : undefined}
+            className={cn(
+              "flex min-h-[4.5rem] items-center gap-3 py-3 pl-4 pr-2",
+              onRowClick && "cursor-pointer select-none active:bg-accent",
+            )}
+          >
+            <div className="min-w-0 flex-1 space-y-1">
+              <div className="truncate font-medium leading-tight">
+                {title.map((column) => (
+                  <React.Fragment key={column.id}>{column.cell(row)}</React.Fragment>
+                ))}
+              </div>
+              {details.length > 0 ? (
+                <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px] leading-tight text-muted-foreground">
+                  {details.map((item, index) => (
+                    <React.Fragment key={item.id}>
+                      {index > 0 ? <span aria-hidden="true">·</span> : null}
+                      <span className="max-w-full truncate">{item.node}</span>
+                    </React.Fragment>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            {trailing.length > 0 || trailingSub.length > 0 ? (
+              <div className="shrink-0 space-y-1 text-right">
+                {trailing.map((column) => (
+                  <div key={column.id} className="font-semibold leading-tight">
+                    {column.cell(row)}
+                  </div>
+                ))}
+                {trailingSub.map((column) => (
+                  <div
+                    key={column.id}
+                    className="text-xs leading-tight text-muted-foreground"
+                  >
+                    {column.cell(row)}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {action.map((column) => (
+              <div key={column.id} className="shrink-0">
+                {column.cell(row)}
+              </div>
+            ))}
+          </li>
+        );
+      })}
+    </ul>
   );
 }

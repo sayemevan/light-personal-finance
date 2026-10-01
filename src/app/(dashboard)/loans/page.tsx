@@ -72,6 +72,7 @@ export default function LoansPage() {
       },
       {
         id: "type",
+        mobile: "meta",
         header: "Type",
         cell: (row) => (
           <Badge variant={row.type === "lent" ? "success" : "secondary"}>
@@ -82,6 +83,7 @@ export default function LoansPage() {
       },
       {
         id: "principal",
+        mobile: "hidden",
         header: "Amount",
         align: "right",
         cell: (row) => formatCurrency(row.principal, currency),
@@ -89,6 +91,7 @@ export default function LoansPage() {
       },
       {
         id: "remaining",
+        mobile: "trailing",
         header: "Remaining",
         align: "right",
         cell: (row) => (
@@ -100,18 +103,21 @@ export default function LoansPage() {
       },
       {
         id: "account",
+        mobile: "hidden",
         header: "Account",
         cell: (row) => (row.accountId ? accountName(row.accountId) : "—"),
         sortValue: (row) => (row.accountId ? accountName(row.accountId) : ""),
       },
       {
         id: "due",
+        mobile: "meta",
         header: "Due date",
         cell: (row) => (row.dueDate ? formatDate(row.dueDate) : "—"),
         sortValue: (row) => row.dueDate ?? "",
       },
       {
         id: "status",
+        mobile: "meta",
         header: "Status",
         cell: (row) => (
           <Badge variant={STATUS_VARIANT[row.status]}>
@@ -148,12 +154,7 @@ export default function LoansPage() {
       <PageHeader
         title="Personal loans"
         description="Track money you have borrowed and money you have lent."
-        actions={
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            Add loan
-          </Button>
-        }
+        action={{ label: "Add loan", onClick: openCreate }}
       />
 
       <QueryView query={loansQuery}>

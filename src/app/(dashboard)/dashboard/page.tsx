@@ -36,7 +36,7 @@ import { AllocationChart } from "@/components/charts/allocation-chart";
 function DashboardSkeleton() {
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, index) => (
           <Skeleton key={index} className="h-28 rounded-xl" />
         ))}
@@ -61,7 +61,7 @@ export default function DashboardPage() {
       <QueryView query={dashboardQuery} loading={<DashboardSkeleton />}>
         {(data) => (
           <div className="space-y-6">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
               <StatCard
                 title="Total balance"
                 value={formatCurrency(data.totalBalance, currency)}
@@ -85,7 +85,7 @@ export default function DashboardPage() {
               />
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4">
               <StatCard
                 title="Outstanding loans"
                 value={formatCurrency(data.outstandingLoans, currency)}
@@ -101,7 +101,7 @@ export default function DashboardPage() {
             </div>
 
             <div className="grid gap-6 lg:grid-cols-3">
-              <div className="grid gap-4 sm:grid-cols-2 lg:col-span-2 lg:grid-cols-1 xl:grid-cols-3">
+              <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:col-span-2 lg:grid-cols-1 xl:grid-cols-3">
                 <StatCard
                   title="Total investments"
                   value={formatCurrency(data.investmentValue, currency)}
@@ -117,6 +117,7 @@ export default function DashboardPage() {
                   value={formatCurrency(data.netWorth, currency)}
                   hint="Cash + investments + assets"
                   icon={Gem}
+                  className="col-span-2 lg:col-span-1"
                 />
               </div>
 

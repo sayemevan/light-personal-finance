@@ -78,6 +78,7 @@ export default function InvestmentsPage() {
       },
       {
         id: "type",
+        mobile: "meta",
         header: "Type",
         cell: (row) => (
           <Badge variant="secondary">
@@ -88,6 +89,7 @@ export default function InvestmentsPage() {
       },
       {
         id: "invested",
+        mobile: "hidden",
         header: "Invested",
         align: "right",
         cell: (row) => formatCurrency(row.amountInvested, currency),
@@ -95,6 +97,7 @@ export default function InvestmentsPage() {
       },
       {
         id: "value",
+        mobile: "trailing",
         header: "Current value",
         align: "right",
         cell: (row) => (
@@ -106,6 +109,7 @@ export default function InvestmentsPage() {
       },
       {
         id: "gain",
+        mobile: "trailingSub",
         header: "Gain / loss",
         align: "right",
         cell: (row) => {
@@ -130,6 +134,7 @@ export default function InvestmentsPage() {
       },
       {
         id: "account",
+        mobile: "hidden",
         header: "Paid from",
         cell: (row) =>
           row.accountId ? (
@@ -140,6 +145,7 @@ export default function InvestmentsPage() {
       },
       {
         id: "date",
+        mobile: "hidden",
         header: "Purchased",
         cell: (row) => formatDate(row.purchaseDate),
         sortValue: (row) => row.purchaseDate,
@@ -169,12 +175,7 @@ export default function InvestmentsPage() {
       <PageHeader
         title="Investments"
         description="Track your holdings and how they are performing."
-        actions={
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            Add investment
-          </Button>
-        }
+        action={{ label: "Add investment", onClick: openCreate }}
       />
 
       <QueryView query={investmentsQuery}>

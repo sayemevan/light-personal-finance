@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 import type { NavIcon, NavItem } from "@/config/navigation";
 
 /** Resolves serializable icon names from the nav config to Lucide components. */
-const iconMap: Record<NavIcon, LucideIcon> = {
+export const iconMap: Record<NavIcon, LucideIcon> = {
   dashboard: LayoutDashboard,
   expenses: Receipt,
   income: TrendingUp,

@@ -90,12 +90,7 @@ export default function CategoriesPage() {
       <PageHeader
         title="Categories"
         description="Organise transactions into expense and income categories."
-        actions={
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            Add category
-          </Button>
-        }
+        action={{ label: "Add category", onClick: openCreate }}
       />
 
       <QueryView query={categoriesQuery}>

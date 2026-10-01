@@ -71,7 +71,7 @@ export default function ReportsPage() {
       />
 
       <Tabs defaultValue="monthly">
-        <TabsList className="h-auto flex-wrap justify-start gap-1">
+        <TabsList className="no-scrollbar h-auto w-full justify-start gap-1 overflow-x-auto sm:w-auto sm:flex-wrap [&>*]:shrink-0">
           <TabsTrigger value="monthly">Monthly & Yearly</TabsTrigger>
           <TabsTrigger value="category">Category</TabsTrigger>
           <TabsTrigger value="account">Account</TabsTrigger>

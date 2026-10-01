@@ -9,6 +9,7 @@ import { useArchiveYears } from "@/hooks/use-history";
 import { useLookups } from "@/hooks/use-lookups";
 import { useCurrency } from "@/hooks/use-settings";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { useNewParam } from "@/hooks/use-new-param";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { PAYMENT_METHOD_LABELS } from "@/lib/labels";
 import type { Expense } from "@/types/domain";
@@ -87,6 +88,7 @@ export default function ExpensesPage() {
     setEditing(undefined);
     setFormOpen(true);
   };
+  useNewParam(openCreate);
   const openEdit = (expense: Expense) => {
     setEditing(expense);
     setFormOpen(true);
@@ -96,29 +98,34 @@ export default function ExpensesPage() {
     const result: DataTableColumn<Expense>[] = [
       {
         id: "date",
+        mobile: "meta",
         header: "Date",
         cell: (row) => formatDate(row.date),
         sortValue: (row) => row.date,
       },
       {
         id: "category",
+        mobile: "title",
         header: "Category",
         cell: (row) => categoryName(row.categoryId),
         sortValue: (row) => categoryName(row.categoryId),
       },
       {
         id: "account",
+        mobile: "meta",
         header: "Account",
         cell: (row) => accountName(row.accountId),
         sortValue: (row) => accountName(row.accountId),
       },
       {
         id: "merchant",
+        mobile: "meta",
         header: "Merchant",
         cell: (row) => row.merchant ?? "—",
       },
       {
         id: "method",
+        mobile: "hidden",
         header: "Method",
         cell: (row) => (
           <Badge variant="secondary">
@@ -128,6 +135,7 @@ export default function ExpensesPage() {
       },
       {
         id: "receipt",
+        mobile: "hidden",
         header: "Receipt",
         align: "center",
         cell: (row) =>
@@ -180,12 +188,7 @@ export default function ExpensesPage() {
       <PageHeader
         title="Expenses"
         description="Everything you spend, in one place."
-        actions={
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            Add expense
-          </Button>
-        }
+        action={{ label: "Add expense", onClick: openCreate }}
       />
 
       <QueryView query={expensesQuery}>

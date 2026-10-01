@@ -36,7 +36,14 @@ export function FilterSelect({
 }: FilterSelectProps) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className={className ?? "h-9 w-full sm:w-[160px]"}>
+      <SelectTrigger
+        className={
+          className ??
+          // Chip on phones (inside a horizontally scrolling row), fixed-width
+          // select on larger screens.
+          "h-9 w-auto min-w-[7.5rem] shrink-0 gap-2 rounded-full sm:w-[160px] sm:rounded-md max-sm:[&>span]:shrink-0"
+        }
+      >
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>

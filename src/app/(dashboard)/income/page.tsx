@@ -8,6 +8,7 @@ import { useArchiveYears } from "@/hooks/use-history";
 import { useLookups } from "@/hooks/use-lookups";
 import { useCurrency } from "@/hooks/use-settings";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { useNewParam } from "@/hooks/use-new-param";
 import { formatCurrency, formatDate } from "@/lib/format";
 import type { Income } from "@/types/domain";
 import { PageHeader } from "@/components/shared/page-header";
@@ -83,6 +84,7 @@ export default function IncomePage() {
     setEditing(undefined);
     setFormOpen(true);
   };
+  useNewParam(openCreate);
   const openEdit = (income: Income) => {
     setEditing(income);
     setFormOpen(true);
@@ -92,24 +94,28 @@ export default function IncomePage() {
     const result: DataTableColumn<Income>[] = [
       {
         id: "date",
+        mobile: "meta",
         header: "Date",
         cell: (row) => formatDate(row.date),
         sortValue: (row) => row.date,
       },
       {
         id: "category",
+        mobile: "title",
         header: "Category",
         cell: (row) => categoryName(row.categoryId),
         sortValue: (row) => categoryName(row.categoryId),
       },
       {
         id: "account",
+        mobile: "meta",
         header: "Account",
         cell: (row) => accountName(row.accountId),
         sortValue: (row) => accountName(row.accountId),
       },
       {
         id: "notes",
+        mobile: "hidden",
         header: "Notes",
         cell: (row) => row.notes ?? "—",
       },
@@ -146,12 +152,7 @@ export default function IncomePage() {
       <PageHeader
         title="Income"
         description="Track every source of money coming in."
-        actions={
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            Add income
-          </Button>
-        }
+        action={{ label: "Add income", onClick: openCreate }}
       />
 
       <QueryView query={incomeQuery}>

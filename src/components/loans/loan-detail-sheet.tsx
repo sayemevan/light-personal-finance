@@ -54,7 +54,7 @@ export function LoanDetailSheet({
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-md">
+        <SheetContent className="w-full overflow-y-auto border-l-0 sm:max-w-md sm:border-l">
           {loanQuery.isLoading || !loan ? (
             <div className="space-y-4">
               <Skeleton className="h-6 w-40" />

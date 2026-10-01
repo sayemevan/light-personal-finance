@@ -45,7 +45,6 @@ export function AccountFormDialog({
       name: "",
       type: "bank",
       openingBalance: 0,
-      currency: "USD",
     },
   });
 
@@ -57,9 +56,8 @@ export function AccountFormDialog({
             name: account.name,
             type: account.type,
             openingBalance: account.openingBalance,
-            currency: account.currency,
           }
-        : { name: "", type: "bank", openingBalance: 0, currency: "USD" },
+        : { name: "", type: "bank", openingBalance: 0 },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, account]);
@@ -103,19 +101,13 @@ export function AccountFormDialog({
                 label="Type"
                 options={ACCOUNT_TYPE_OPTIONS}
               />
-              <TextField
+              <NumberField
                 control={form.control}
-                name="currency"
-                label="Currency"
-                placeholder="USD"
+                name="openingBalance"
+                label="Opening balance"
+                placeholder="0.00"
               />
             </div>
-            <NumberField
-              control={form.control}
-              name="openingBalance"
-              label="Opening balance"
-              placeholder="0.00"
-            />
             <DialogFooter>
               <Button
                 type="button"

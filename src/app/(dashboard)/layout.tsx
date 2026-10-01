@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
+import { BottomNav } from "@/components/layout/bottom-nav";
 
 export default async function DashboardLayout({
   children,
@@ -21,8 +22,12 @@ export default async function DashboardLayout({
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <Header user={session.user} />
-        <main className="flex-1 space-y-6 p-4 md:p-6 lg:p-8">{children}</main>
+        {/* Bottom padding clears the mobile bottom nav and the FAB above it. */}
+        <main className="flex-1 space-y-4 px-4 md:space-y-6 pb-[calc(9rem+env(safe-area-inset-bottom))] pt-4 md:p-6 lg:p-8">
+          {children}
+        </main>
       </div>
+      <BottomNav />
     </div>
   );
 }

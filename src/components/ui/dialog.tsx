@@ -5,6 +5,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { SheetGrabber, useBackToClose } from "@/components/ui/mobile-sheet";
 
 const Dialog = DialogPrimitive.Root;
 const DialogTrigger = DialogPrimitive.Trigger;
@@ -26,6 +27,10 @@ const DialogOverlay = React.forwardRef<
 ));
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
+/**
+ * Centered modal on larger screens; on phones it becomes a bottom sheet with a
+ * grab handle, swipe-to-dismiss and back-button-to-close.
+ */
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
@@ -35,20 +40,48 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed left-[50%] top-[50%] z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:max-w-lg sm:rounded-lg",
+        // Phone: bottom sheet.
+        "fixed inset-x-0 bottom-0 z-50 grid max-h-[92dvh] w-full gap-4 overflow-y-auto overscroll-contain rounded-t-[28px] border-t bg-background px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-2 shadow-lg duration-300 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
+        // Tablet / desktop: centered dialog.
+        "sm:bottom-auto sm:left-[50%] sm:right-auto sm:top-[50%] sm:max-h-[calc(100dvh-2rem)] sm:max-w-lg sm:translate-x-[-50%] sm:translate-y-[-50%] sm:rounded-lg sm:border sm:p-6 sm:duration-200 sm:data-[state=closed]:fade-out-0 sm:data-[state=open]:fade-in-0 sm:data-[state=closed]:zoom-out-95 sm:data-[state=open]:zoom-in-95 sm:data-[state=closed]:slide-out-to-bottom-0 sm:data-[state=open]:slide-in-from-bottom-0",
         className,
       )}
       {...props}
     >
-      {children}
-      <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring disabled:pointer-events-none">
-        <X className="h-4 w-4" />
-        <span className="sr-only">Close</span>
-      </DialogPrimitive.Close>
+      <MobileSheetChrome>{children}</MobileSheetChrome>
     </DialogPrimitive.Content>
   </DialogPortal>
 ));
 DialogContent.displayName = DialogPrimitive.Content.displayName;
+
+/** Grab handle + close wiring shared by the dialog's mobile sheet form. */
+function MobileSheetChrome({ children }: { children: React.ReactNode }) {
+  const closeRef = React.useRef<HTMLButtonElement>(null);
+  const handleRef = React.useRef<HTMLDivElement>(null);
+  const contentRef = React.useRef<HTMLElement | null>(null);
+  const close = React.useCallback(() => closeRef.current?.click(), []);
+  // Resolved before useBackToClose's effect runs (layout effects run first).
+  React.useLayoutEffect(() => {
+    contentRef.current = handleRef.current?.parentElement ?? null;
+  }, []);
+  useBackToClose(close, contentRef);
+
+  return (
+    <>
+      <div ref={handleRef} className="contents">
+        <SheetGrabber targetRef={contentRef} onDismiss={close} />
+      </div>
+      {children}
+      <DialogPrimitive.Close
+        ref={closeRef}
+        className="absolute right-4 top-4 hidden rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring disabled:pointer-events-none sm:block"
+      >
+        <X className="h-4 w-4" />
+        <span className="sr-only">Close</span>
+      </DialogPrimitive.Close>
+    </>
+  );
+}
 
 const DialogHeader = ({
   className,
@@ -67,7 +100,8 @@ const DialogFooter = ({
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      "flex flex-col-reverse gap-2 sm:flex-row sm:justify-end",
+      // Pinned to the bottom of the sheet on phones so actions stay in reach.
+      "sticky -bottom-[calc(1.25rem+env(safe-area-inset-bottom))] -mx-5 -mb-[calc(1.25rem+env(safe-area-inset-bottom))] flex flex-row gap-2 border-t bg-background px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 [&>*]:h-11 [&>*]:flex-1 [&>*]:rounded-full sm:static sm:mx-0 sm:mb-0 sm:justify-end sm:border-0 sm:p-0 sm:[&>*]:h-9 sm:[&>*]:flex-none sm:[&>*]:rounded-md",
       className,
     )}
     {...props}

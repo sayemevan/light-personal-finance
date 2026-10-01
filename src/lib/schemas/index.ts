@@ -80,7 +80,8 @@ export const createAccountSchema = z.object({
   name: z.string().trim().min(1).max(80),
   type: accountTypeSchema,
   openingBalance: z.coerce.number().finite().default(0),
-  currency: z.string().length(3).default("USD"),
+  /** Omitted by the UI; the server falls back to the Settings currency. */
+  currency: z.string().length(3).optional(),
 });
 export const updateAccountSchema = createAccountSchema
   .partial()

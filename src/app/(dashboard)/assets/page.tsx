@@ -61,6 +61,7 @@ export default function AssetsPage() {
       },
       {
         id: "category",
+        mobile: "meta",
         header: "Category",
         cell: (row) => (
           <Badge variant="secondary">
@@ -71,6 +72,7 @@ export default function AssetsPage() {
       },
       {
         id: "purchase",
+        mobile: "hidden",
         header: "Purchase value",
         align: "right",
         cell: (row) => formatCurrency(row.purchaseValue, currency),
@@ -78,6 +80,7 @@ export default function AssetsPage() {
       },
       {
         id: "value",
+        mobile: "trailing",
         header: "Current value",
         align: "right",
         cell: (row) => (
@@ -89,6 +92,7 @@ export default function AssetsPage() {
       },
       {
         id: "gain",
+        mobile: "trailingSub",
         header: "Change",
         align: "right",
         cell: (row) => {
@@ -113,6 +117,7 @@ export default function AssetsPage() {
       },
       {
         id: "account",
+        mobile: "hidden",
         header: "Paid from",
         cell: (row) =>
           row.accountId ? (
@@ -123,6 +128,7 @@ export default function AssetsPage() {
       },
       {
         id: "date",
+        mobile: "hidden",
         header: "Purchased",
         cell: (row) => formatDate(row.purchaseDate),
         sortValue: (row) => row.purchaseDate,
@@ -147,12 +153,7 @@ export default function AssetsPage() {
       <PageHeader
         title="Assets"
         description="Track your personal assets and their estimated worth."
-        actions={
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            Add asset
-          </Button>
-        }
+        action={{ label: "Add asset", onClick: openCreate }}
       />
 
       <QueryView query={assetsQuery}>
