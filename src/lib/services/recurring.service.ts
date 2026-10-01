@@ -1,13 +1,12 @@
 import "server-only";
 import type { z } from "zod";
 import {
-  accountsRepo,
-  categoriesRepo,
   expensesRepo,
   incomeRepo,
   recurringRepo,
   transfersRepo,
 } from "@/lib/repositories";
+import { loadLedger } from "@/lib/services/ledger.service";
 import { getSpreadsheetId } from "@/lib/google/workspace";
 import { withLocalLock } from "@/lib/google/lock";
 import { createExpense } from "@/lib/services/expense.service";
@@ -146,10 +145,7 @@ async function assertReferences(
   spreadsheetId: string,
   rule: RecurringRule,
 ): Promise<void> {
-  const [accounts, categories] = await Promise.all([
-    accountsRepo.list(spreadsheetId),
-    rule.kind === "transfer" ? Promise.resolve([]) : categoriesRepo.list(spreadsheetId),
-  ]);
+  const { accounts, categories } = await loadLedger(spreadsheetId);
   const accountIds = [rule.accountId, rule.toAccountId].filter(
     (id): id is string => Boolean(id),
   );
@@ -187,9 +183,8 @@ function advancedPatch(
 
 /** All rules, soonest due first (paused rules last). */
 export async function listRecurring(): Promise<RecurringRule[]> {
-  const spreadsheetId = await getSpreadsheetId();
-  const rules = await recurringRepo.list(spreadsheetId);
-  return rules.sort(
+  const { recurring: rules } = await loadLedger();
+  return [...rules].sort(
     (a, b) =>
       Number(b.isActive) - Number(a.isActive) ||
       a.nextDate.localeCompare(b.nextDate) ||
@@ -394,7 +389,8 @@ export async function runDueRules(today: string): Promise<RunDueResult> {
 
   // This runs on every app open; only take the lock when something has to be
   // written, otherwise just report what's waiting for confirmation.
-  const snapshot = await recurringRepo.list(spreadsheetId);
+  // Shared read; the locked path below re-reads the rules fresh.
+  const { recurring: snapshot } = await loadLedger(spreadsheetId);
   const needsWrite = snapshot.some(
     (rule) =>
       rule.isActive &&

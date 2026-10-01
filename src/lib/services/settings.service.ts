@@ -2,6 +2,8 @@ import "server-only";
 import { readRange, updateRange, appendRows } from "@/lib/google/sheets";
 import { getSpreadsheetId } from "@/lib/google/workspace";
 import { SHEET_TABS } from "@/config/google";
+import { noteSpreadsheetWrite } from "@/lib/google/repository";
+import { loadLedger } from "@/lib/services/ledger.service";
 import { DEFAULT_CURRENCY } from "@/config/defaults";
 
 export interface AppSettings {
@@ -23,8 +25,8 @@ export function isSupportedCurrency(code: string): boolean {
 
 /** Read the Settings key/value tab into a typed object. */
 export async function getSettings(): Promise<AppSettings> {
-  const spreadsheetId = await getSpreadsheetId();
-  const rows = await readRange(spreadsheetId, `${SHEET_TABS.settings}!A2:B`);
+  // Comes with the ledger's batched read: no separate Sheets call.
+  const rows = (await loadLedger()).settings;
   const map = new Map(rows.map((row) => [row[0], row[1] ?? ""]));
   return {
     // Guard against a bad value already saved (or typed into the sheet).
@@ -42,12 +44,13 @@ async function setSetting(key: string, value: string): Promise<void> {
 
   if (index === -1) {
     await appendRows(spreadsheetId, `${SHEET_TABS.settings}!A1`, [[key, value]]);
-    return;
+  } else {
+    const rowNumber = index + 2;
+    await updateRange(spreadsheetId, `${SHEET_TABS.settings}!B${rowNumber}`, [
+      [value],
+    ]);
   }
-  const rowNumber = index + 2;
-  await updateRange(spreadsheetId, `${SHEET_TABS.settings}!B${rowNumber}`, [
-    [value],
-  ]);
+  noteSpreadsheetWrite(spreadsheetId);
 }
 
 export async function updateSettings(

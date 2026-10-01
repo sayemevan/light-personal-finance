@@ -13,7 +13,8 @@ const overviewQuerySchema = z.object({
     .int()
     .min(1)
     .max(12)
-    .default(new Date().getMonth() + 1),
+    // A function, so it is evaluated per request, not once at server start.
+    .default(() => new Date().getMonth() + 1),
 });
 
 export async function GET(req: NextRequest) {

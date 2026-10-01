@@ -31,10 +31,27 @@ export function useLookups() {
       .filter((a) => !a.isArchived)
       .map((a) => ({ label: a.name, value: a.id }));
 
-    const categoryOptions = (kind: CategoryKind) =>
+    /**
+     * Active accounts plus any of `keep` (e.g. the record being edited) that
+     * were archived since, so the select doesn't show them blank.
+     */
+    const accountOptionsWith = (...keep: (string | undefined)[]) => [
+      ...accountOptions,
+      ...accounts
+        .filter((a) => a.isArchived && keep.includes(a.id))
+        .map((a) => ({ label: `${a.name} (archived)`, value: a.id })),
+    ];
+
+    /** Active categories of `kind`, plus `keep` if it has been archived. */
+    const categoryOptions = (kind: CategoryKind, keep?: string) =>
       categories
-        .filter((c) => c.kind === kind && !c.isArchived)
-        .map((c) => ({ label: c.name, value: c.id }));
+        .filter(
+          (c) => c.kind === kind && (!c.isArchived || (keep && c.id === keep)),
+        )
+        .map((c) => ({
+          label: c.isArchived ? `${c.name} (archived)` : c.name,
+          value: c.id,
+        }));
 
     return {
       accounts,
@@ -42,6 +59,7 @@ export function useLookups() {
       accountName,
       categoryName,
       accountOptions,
+      accountOptionsWith,
       categoryOptions,
       isLoading,
     };

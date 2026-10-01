@@ -11,7 +11,13 @@ import type { Paginated } from "@/types/api";
 import type { CreateIncomeInput } from "@/lib/schemas";
 import { useUndoableDelete } from "@/hooks/use-undoable-delete";
 
-const INVALIDATE = [queryKeys.income, ...derivedKeys] as const;
+// Saves can add merchants/tags (suggestions) and new years (year filter).
+const INVALIDATE = [
+  queryKeys.income,
+  queryKeys.suggestions,
+  queryKeys.archiveYears,
+  ...derivedKeys,
+] as const;
 
 export function useIncome(params: ListQueryParams) {
   return useQuery({

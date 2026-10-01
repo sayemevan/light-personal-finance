@@ -44,7 +44,11 @@ export function TransferFormDialog({
   defaultFromAccountId,
 }: TransferFormDialogProps) {
   const isEdit = Boolean(transfer);
-  const { accounts, accountOptions } = useLookups();
+  const { accounts, accountOptionsWith } = useLookups();
+  const accountOptions = accountOptionsWith(
+    transfer?.fromAccountId,
+    transfer?.toAccountId,
+  );
   const currency = useCurrency();
   const createTransfer = useCreateTransfer();
   const updateTransfer = useUpdateTransfer();

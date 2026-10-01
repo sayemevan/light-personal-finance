@@ -17,6 +17,7 @@ import {
 import { AppError } from "@/lib/errors";
 import { createHash } from "node:crypto";
 import { withLocalLock } from "@/lib/google/lock";
+import { invalidateArchiveCache } from "@/lib/services/history.service";
 import type { SheetRepository } from "@/lib/google/repository";
 import { expensesRepo, incomeRepo } from "@/lib/repositories";
 import type { ArchiveResult, ArchiveYearSummary } from "@/types/api";
@@ -382,6 +383,7 @@ export async function archiveTransactions(
           }),
   );
   invalidateWorkspaceCache();
+  invalidateArchiveCache();
   return result;
 }
 

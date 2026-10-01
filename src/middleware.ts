@@ -9,7 +9,10 @@ const PUBLIC_ROUTES = ["/sign-in"];
 
 export default auth((req) => {
   const { nextUrl } = req;
-  const isLoggedIn = Boolean(req.auth);
+  // A session whose Google token refresh failed (revoked access, expired
+  // refresh token) can't call any API. Treat it as signed out, otherwise
+  // /sign-in redirects to the dashboard while every request returns 401.
+  const isLoggedIn = Boolean(req.auth) && !req.auth?.error;
   const isPublic = PUBLIC_ROUTES.some((route) =>
     nextUrl.pathname.startsWith(route),
   );

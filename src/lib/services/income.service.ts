@@ -1,10 +1,7 @@
 import "server-only";
-import {
-  accountsRepo,
-  categoriesRepo,
-  incomeRepo,
-} from "@/lib/repositories";
-import { getSpreadsheetId, getWorkspaceForCurrentUser } from "@/lib/google/workspace";
+import { incomeRepo } from "@/lib/repositories";
+import { loadLedger } from "@/lib/services/ledger.service";
+import { getSpreadsheetId } from "@/lib/google/workspace";
 import { getIncomeForYear } from "@/lib/services/history.service";
 import { queryCollection } from "@/lib/services/query";
 import { generateId } from "@/lib/id";
@@ -21,11 +18,9 @@ import type { CreateIncomeInput, IncomeListQuery } from "@/lib/schemas";
 export async function listIncome(
   query: IncomeListQuery,
 ): Promise<Paginated<Income>> {
-  const { spreadsheetId } = await getWorkspaceForCurrentUser();
-  const [income, accounts, categories] = await Promise.all([
+  const [income, { accounts, categories }] = await Promise.all([
     getIncomeForYear(query.year),
-    accountsRepo.list(spreadsheetId),
-    categoriesRepo.list(spreadsheetId),
+    loadLedger(),
   ]);
 
   const accountName = (id: string) =>

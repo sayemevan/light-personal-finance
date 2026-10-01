@@ -42,7 +42,8 @@ export function LoanFormDialog({
   loan,
 }: LoanFormDialogProps) {
   const isEdit = Boolean(loan);
-  const { accountOptions } = useLookups();
+  const { accountOptionsWith } = useLookups();
+  const accountOptions = accountOptionsWith(loan?.accountId);
   const createLoan = useCreateLoan();
   const updateLoan = useUpdateLoan();
   const currency = useCurrency();

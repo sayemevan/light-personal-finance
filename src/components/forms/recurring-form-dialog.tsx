@@ -127,7 +127,11 @@ export function RecurringFormDialog({
   rule,
 }: RecurringFormDialogProps) {
   const isEdit = Boolean(rule);
-  const { accountOptions, categoryOptions } = useLookups();
+  const { accountOptionsWith, categoryOptions: activeCategoryOptions } =
+    useLookups();
+  const accountOptions = accountOptionsWith(rule?.accountId, rule?.toAccountId);
+  const categoryOptions = (kind: Parameters<typeof activeCategoryOptions>[0]) =>
+    activeCategoryOptions(kind, rule?.categoryId);
   const createRecurring = useCreateRecurring();
   const updateRecurring = useUpdateRecurring();
 

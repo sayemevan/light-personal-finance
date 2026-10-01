@@ -154,5 +154,21 @@ export async function addGoalContribution(
 
 export async function deleteGoalContribution(id: string): Promise<void> {
   const spreadsheetId = await getSpreadsheetId();
+  const contributions = await goalContributionsRepo.list(spreadsheetId);
+  const target = contributions.find((c) => c.id === id);
+  if (!target) throw AppError.notFound("Contribution not found.");
+
+  // Same rule as withdrawing: the goal's savings can't go below zero. E.g.
+  // +100 then −80; deleting the +100 would leave −80 saved.
+  if (target.amount > 0) {
+    const savedAfter = contributions
+      .filter((c) => c.goalId === target.goalId && c.id !== id)
+      .reduce((total, c) => total + c.amount, 0);
+    if (savedAfter < -0.005) {
+      throw AppError.validation(
+        "Deleting this would leave the goal below zero. Delete the withdrawals after it first.",
+      );
+    }
+  }
   await goalContributionsRepo.remove(spreadsheetId, id);
 }

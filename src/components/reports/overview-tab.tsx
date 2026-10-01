@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Store, TrendingUp } from "lucide-react";
 
+import { useCalendarMonth } from "@/hooks/use-calendar-month";
 import { useOverviewReport } from "@/hooks/use-reports";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -38,20 +39,23 @@ interface OverviewTabProps {
 }
 
 export function OverviewTab({ year, currency }: OverviewTabProps) {
-  const now = new Date();
-  const isCurrentYear = year === String(now.getFullYear());
-  const lastMonth = isCurrentYear ? now.getMonth() + 1 : 12;
-  const [pickedMonth, setPickedMonth] = React.useState(now.getMonth() + 1);
-  const month = Math.min(pickedMonth, lastMonth);
-  const overview = useOverviewReport(year, month);
+  // Local month, known only on the client (null while server rendering).
+  const today = useCalendarMonth();
+  const isCurrentYear = today !== null && year === String(today.year);
+  const lastMonth = isCurrentYear ? today.month : 12;
+  const [pickedMonth, setPickedMonth] = React.useState<number | null>(null);
+  const month = Math.min(pickedMonth ?? today?.month ?? 12, lastMonth);
+  const overview = useOverviewReport(year, month, { enabled: today !== null });
 
   return (
     <div className="space-y-4 md:space-y-6">
-      <MonthChips
-        count={lastMonth}
-        value={month}
-        onChange={setPickedMonth}
-      />
+      {today ? (
+        <MonthChips
+          count={lastMonth}
+          value={month}
+          onChange={setPickedMonth}
+        />
+      ) : null}
       <QueryView query={overview}>
         {(report) => <OverviewContent report={report} currency={currency} />}
       </QueryView>

@@ -1,5 +1,6 @@
 import "server-only";
 import { loansRepo, loanPaymentsRepo } from "@/lib/repositories";
+import { loadLedger } from "@/lib/services/ledger.service";
 import { getSpreadsheetId } from "@/lib/google/workspace";
 import { computeLoanRemaining, effectiveLoanStatus } from "@/lib/finance";
 import { generateId } from "@/lib/id";
@@ -11,11 +12,7 @@ import type { CreateLoanInput, CreateLoanPaymentInput } from "@/lib/schemas";
 
 /** List loans with computed remaining balances, optionally filtered by type. */
 export async function listLoans(type?: LoanType): Promise<Loan[]> {
-  const spreadsheetId = await getSpreadsheetId();
-  const [loans, payments] = await Promise.all([
-    loansRepo.list(spreadsheetId),
-    loanPaymentsRepo.list(spreadsheetId),
-  ]);
+  const { loans, loanPayments: payments } = await loadLedger();
   return loans
     .filter((loan) => (type ? loan.type === type : true))
     .map((loan) => {
@@ -33,11 +30,11 @@ export async function listLoans(type?: LoanType): Promise<Loan[]> {
 export async function getLoan(
   id: string,
 ): Promise<Loan & { payments: LoanPayment[] }> {
-  const spreadsheetId = await getSpreadsheetId();
-  const loan = await loansRepo.findById(spreadsheetId, id);
+  const ledger = await loadLedger();
+  const loan = ledger.loans.find((l) => l.id === id);
   if (!loan) throw AppError.notFound("Loan not found.");
 
-  const payments = (await loanPaymentsRepo.list(spreadsheetId))
+  const payments = ledger.loanPayments
     .filter((p) => p.loanId === id)
     .sort((a, b) => b.date.localeCompare(a.date));
 

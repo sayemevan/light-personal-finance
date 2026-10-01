@@ -53,7 +53,7 @@ export function IncomeFormDialog({
   income,
 }: IncomeFormDialogProps) {
   const isEdit = Boolean(income);
-  const { accountOptions, categoryOptions } = useLookups();
+  const { accountOptionsWith, categoryOptions } = useLookups();
   const createIncome = useCreateIncome();
   const updateIncome = useUpdateIncome();
   const suggestions = useEntrySuggestions(open);
@@ -119,14 +119,14 @@ export function IncomeFormDialog({
                 name="categoryId"
                 label="Category"
                 placeholder="Select category"
-                options={categoryOptions("income")}
+                options={categoryOptions("income", income?.categoryId)}
               />
               <SelectField
                 control={form.control}
                 name="accountId"
                 label="Received in"
                 placeholder="Account"
-                options={accountOptions}
+                options={accountOptionsWith(income?.accountId)}
               />
             </div>
             <DateField control={form.control} name="date" label="Date" />

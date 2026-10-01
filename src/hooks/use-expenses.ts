@@ -28,7 +28,13 @@ export type CreatedExpense = Expense & {
   budgetAlert?: BudgetAlert | null;
 };
 
-const INVALIDATE = [queryKeys.expenses, ...derivedKeys] as const;
+// Saves can add merchants/tags (suggestions) and new years (year filter).
+const INVALIDATE = [
+  queryKeys.expenses,
+  queryKeys.suggestions,
+  queryKeys.archiveYears,
+  ...derivedKeys,
+] as const;
 
 export function useExpenses(params: ListQueryParams) {
   return useQuery({
@@ -48,7 +54,7 @@ export function useCreateExpense() {
         created.splitLoans
           ? `Expense added. ${created.splitLoans} ${created.splitLoans === 1 ? "person owes" : "people owe"} you their share (see Loans).`
           : "Expense added.",
-      invalidate: [...INVALIDATE, queryKeys.loans, queryKeys.suggestions],
+      invalidate: [...INVALIDATE, queryKeys.loans],
     },
   );
 }

@@ -35,9 +35,10 @@ import { Button } from "@/components/ui/button";
 import { ExpenseFormDialog } from "@/components/forms/expense-form-dialog";
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100];
-const CURRENT_YEAR = String(new Date().getFullYear());
 
 export default function ExpensesPage() {
+  // Per render, not per module load: a tab left open over New Year moves on.
+  const CURRENT_YEAR = String(new Date().getFullYear());
   const { accountName, categoryName, accountOptions, categoryOptions } =
     useLookups();
   const currency = useCurrency();

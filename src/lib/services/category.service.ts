@@ -1,5 +1,6 @@
 import "server-only";
 import { categoriesRepo } from "@/lib/repositories";
+import { loadLedger } from "@/lib/services/ledger.service";
 import { getSpreadsheetId } from "@/lib/google/workspace";
 import { generateId } from "@/lib/id";
 import type { Category, CategoryKind } from "@/types/domain";
@@ -8,8 +9,7 @@ import type { CreateCategoryInput } from "@/lib/schemas";
 export async function listCategories(
   kind?: CategoryKind,
 ): Promise<Category[]> {
-  const spreadsheetId = await getSpreadsheetId();
-  const categories = await categoriesRepo.list(spreadsheetId);
+  const { categories } = await loadLedger();
   return kind ? categories.filter((c) => c.kind === kind) : categories;
 }
 

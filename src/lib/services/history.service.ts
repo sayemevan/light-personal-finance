@@ -10,6 +10,7 @@ import { findSpreadsheet } from "@/lib/google/drive";
 import { readRange } from "@/lib/google/sheets";
 import { getWorkspaceForCurrentUser } from "@/lib/google/workspace";
 import { expensesRepo, incomeRepo } from "@/lib/repositories";
+import { loadLedger } from "@/lib/services/ledger.service";
 import type { Expense, Income } from "@/types/domain";
 
 export type TransactionKind = "expense" | "income";
@@ -40,11 +41,65 @@ function archiveConfig(kind: TransactionKind) {
       };
 }
 
+// ---------------------------------------------------------------------------
+// Archive read cache
+// ---------------------------------------------------------------------------
+
+/**
+ * Archive workbooks only change when an archive runs, yet every past-year
+ * view and the year list read them, costing Sheets read quota (60/min per
+ * user). Reads are cached per server instance and cleared by
+ * `invalidateArchiveCache` after an archive run. Another instance may serve
+ * a copy up to ARCHIVE_TTL_MS old; totals stay right meanwhile, because a
+ * live rollup is only dropped once its month's detail rows are in hand.
+ */
+const ARCHIVE_TTL_MS = 10 * 60_000;
+/** Shorter for "no archive yet", which changes on the first archive run. */
+const NO_ARCHIVE_TTL_MS = 60_000;
+const archiveCache = new Map<
+  string,
+  { at: number; ttl: number; value: Promise<unknown> }
+>();
+
+function cached<T>(
+  key: string,
+  load: () => Promise<T>,
+  ttl = ARCHIVE_TTL_MS,
+): Promise<T> {
+  const hit = archiveCache.get(key);
+  if (hit && Date.now() - hit.at < hit.ttl) return hit.value as Promise<T>;
+  const value = load();
+  archiveCache.set(key, { at: Date.now(), ttl, value });
+  value.catch(() => archiveCache.delete(key));
+  return value;
+}
+
+export function invalidateArchiveCache(): void {
+  archiveCache.clear();
+}
+
 async function findArchiveId(
   kind: TransactionKind,
   rootFolderId: string,
 ): Promise<string | null> {
-  return findSpreadsheet(archiveConfig(kind).title, rootFolderId);
+  const key = `id:${kind}:${rootFolderId}`;
+  const id = await cached(key, () =>
+    findSpreadsheet(archiveConfig(kind).title, rootFolderId),
+  );
+  if (id === null) {
+    // Re-check "none" sooner than a found id.
+    const entry = archiveCache.get(key);
+    if (entry) entry.ttl = NO_ARCHIVE_TTL_MS;
+  }
+  return id;
+}
+
+function archivedExpenses(archiveId: string): Promise<Expense[]> {
+  return cached(`rows:${archiveId}`, () => expensesRepo.list(archiveId));
+}
+
+function archivedIncome(archiveId: string): Promise<Income[]> {
+  return cached(`rows:${archiveId}`, () => incomeRepo.list(archiveId));
 }
 
 /** Combine two row sets, keeping live-sheet rows when an id appears in both. */
@@ -72,12 +127,20 @@ function mergeById<T extends { id: string; date: string; notes?: string }>(
 
 export async function getExpensesForYear(year: string): Promise<Expense[]> {
   const { spreadsheetId, rootFolderId } = await getWorkspaceForCurrentUser();
-  const liveRows = await expensesRepo.list(spreadsheetId);
+  const liveRows = (await loadLedger(spreadsheetId)).expenses;
 
-  // "live" (or the current calendar year) is the working view: show everything
-  // currently in the live sheet, unfiltered by date.
+  // "live" (or the current calendar year) is the working view: everything in
+  // the live sheet, unfiltered by date, plus this year's archived details in
+  // place of their monthly rollups (an archive run also moves current-year
+  // rows, which would otherwise lose their tags, merchants and notes here).
   if (isLiveYear(year)) {
-    return liveRows;
+    const archiveId = await findArchiveId("expense", rootFolderId);
+    if (!archiveId) return liveRows;
+    const thisYear = `${currentCalendarYear()}-`;
+    const archived = (await archivedExpenses(archiveId)).filter((row) =>
+      row.date.startsWith(thisYear),
+    );
+    return archived.length > 0 ? mergeById(liveRows, archived) : liveRows;
   }
 
   // For any other year, a row may live in either the archive (past years that
@@ -86,7 +149,7 @@ export async function getExpensesForYear(year: string): Promise<Expense[]> {
   const liveForYear = liveRows.filter((row) => row.date.startsWith(`${year}-`));
   const archiveId = await findArchiveId("expense", rootFolderId);
   const archiveForYear = archiveId
-    ? (await expensesRepo.list(archiveId)).filter((row) =>
+    ? (await archivedExpenses(archiveId)).filter((row) =>
         row.date.startsWith(`${year}-`),
       )
     : [];
@@ -96,16 +159,23 @@ export async function getExpensesForYear(year: string): Promise<Expense[]> {
 
 export async function getIncomeForYear(year: string): Promise<Income[]> {
   const { spreadsheetId, rootFolderId } = await getWorkspaceForCurrentUser();
-  const liveRows = await incomeRepo.list(spreadsheetId);
+  const liveRows = (await loadLedger(spreadsheetId)).income;
 
+  // See getExpensesForYear.
   if (isLiveYear(year)) {
-    return liveRows;
+    const archiveId = await findArchiveId("income", rootFolderId);
+    if (!archiveId) return liveRows;
+    const thisYear = `${currentCalendarYear()}-`;
+    const archived = (await archivedIncome(archiveId)).filter((row) =>
+      row.date.startsWith(thisYear),
+    );
+    return archived.length > 0 ? mergeById(liveRows, archived) : liveRows;
   }
 
   const liveForYear = liveRows.filter((row) => row.date.startsWith(`${year}-`));
   const archiveId = await findArchiveId("income", rootFolderId);
   const archiveForYear = archiveId
-    ? (await incomeRepo.list(archiveId)).filter((row) =>
+    ? (await archivedIncome(archiveId)).filter((row) =>
         row.date.startsWith(`${year}-`),
       )
     : [];
@@ -118,10 +188,8 @@ async function getYearsForKind(
   spreadsheetId: string,
   rootFolderId: string,
 ): Promise<string[]> {
-  const liveRows =
-    kind === "expense"
-      ? await expensesRepo.list(spreadsheetId)
-      : await incomeRepo.list(spreadsheetId);
+  const ledger = await loadLedger(spreadsheetId);
+  const liveRows = kind === "expense" ? ledger.expenses : ledger.income;
   const years = new Set<string>([currentCalendarYear()]);
 
   for (const row of liveRows) {
@@ -133,9 +201,11 @@ async function getYearsForKind(
   if (archiveId) {
     const [detailRows, summaryRows] = await Promise.all([
       kind === "expense"
-        ? expensesRepo.list(archiveId)
-        : incomeRepo.list(archiveId),
-      readRange(archiveId, `${ARCHIVE_SUMMARY_TAB}!A2:A`),
+        ? archivedExpenses(archiveId)
+        : archivedIncome(archiveId),
+      cached(`summary:${archiveId}`, () =>
+        readRange(archiveId, `${ARCHIVE_SUMMARY_TAB}!A2:A`),
+      ),
     ]);
     for (const row of detailRows) {
       const year = row.date.slice(0, 4);

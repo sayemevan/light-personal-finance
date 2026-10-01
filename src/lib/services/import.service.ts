@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import { expensesRepo, incomeRepo } from "@/lib/repositories";
 import { getSpreadsheetId } from "@/lib/google/workspace";
 import { loadLedger } from "@/lib/services/ledger.service";
@@ -7,7 +8,6 @@ import {
   getIncomeForYear,
   isLiveYear,
 } from "@/lib/services/history.service";
-import { generateId } from "@/lib/id";
 import { AppError } from "@/lib/errors";
 import type {
   AccountType,
@@ -67,8 +67,10 @@ export async function checkImport(
 
   const years = yearsBetween(input.from, input.to);
   const [expenses, income] = await Promise.all([
-    collectForRange(years, ledger.expenses, getExpensesForYear),
-    collectForRange(years, ledger.income, getIncomeForYear),
+    // The live view includes this year's archived rows (see history.service),
+    // so duplicates of already-archived current-year entries are caught too.
+    collectForRange(years, await getExpensesForYear("live"), getExpensesForYear),
+    collectForRange(years, await getIncomeForYear("live"), getIncomeForYear),
   ]);
 
   const inRange = (row: { accountId: string; date: string }) =>
@@ -154,8 +156,17 @@ export async function importTransactions(
   const now = new Date().toISOString();
   const paymentMethod = paymentMethodFor(account.type);
 
-  const expenses: Expense[] = input.expenses.map((row) => ({
-    id: generateId(),
+  // Ids derived from the request's content: a retry of the same import (e.g.
+  // after the income write failed but expenses were saved) produces the same
+  // ids, and keepFirstOf below removes the second copy.
+  const batch = createHash("sha256")
+    .update(JSON.stringify([input.accountId, input.expenses, input.income]))
+    .digest("hex")
+    .slice(0, 16);
+  const rowId = (kind: string, index: number) => `imp_${batch}_${kind}${index}`;
+
+  const expenses: Expense[] = input.expenses.map((row, index) => ({
+    id: rowId("e", index),
     date: row.date,
     amount: row.amount,
     categoryId: row.categoryId,
@@ -168,8 +179,8 @@ export async function importTransactions(
     updatedAt: now,
   }));
 
-  const income: Income[] = input.income.map((row) => ({
-    id: generateId(),
+  const income: Income[] = input.income.map((row, index) => ({
+    id: rowId("i", index),
     date: row.date,
     amount: row.amount,
     categoryId: row.categoryId,
@@ -183,9 +194,17 @@ export async function importTransactions(
 
   if (expenses.length > 0) {
     await expensesRepo.appendMany(spreadsheetId, expenses);
+    await expensesRepo.keepFirstOf(
+      spreadsheetId,
+      new Set(expenses.map((row) => row.id)),
+    );
   }
   if (income.length > 0) {
     await incomeRepo.appendMany(spreadsheetId, income);
+    await incomeRepo.keepFirstOf(
+      spreadsheetId,
+      new Set(income.map((row) => row.id)),
+    );
   }
 
   return { expenses: expenses.length, income: income.length };

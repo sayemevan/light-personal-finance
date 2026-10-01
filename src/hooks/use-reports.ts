@@ -66,8 +66,13 @@ export function useAssetSummary() {
   });
 }
 
-export function useOverviewReport(year: string, month: number) {
+export function useOverviewReport(
+  year: string,
+  month: number,
+  options: { enabled?: boolean } = {},
+) {
   return useQuery({
+    enabled: options.enabled ?? true,
     queryKey: [...queryKeys.reports("overview"), year, month],
     queryFn: () =>
       api.get<OverviewReport>(

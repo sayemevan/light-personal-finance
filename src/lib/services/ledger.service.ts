@@ -2,6 +2,7 @@ import "server-only";
 import { getSheetsClient } from "@/lib/google/client";
 import { spreadsheetGeneration } from "@/lib/google/repository";
 import { getSpreadsheetId } from "@/lib/google/workspace";
+import { SHEET_TABS } from "@/config/google";
 import {
   accountsRepo,
   assetsRepo,
@@ -51,7 +52,11 @@ export interface Ledger {
   goals: Goal[];
   goalContributions: GoalContribution[];
   recurring: RecurringRule[];
+  /** Raw key/value rows of the Settings tab (read in the same batch). */
+  settings: string[][];
 }
+
+const SETTINGS_RANGE = `${SHEET_TABS.settings}!A2:B`;
 
 const REPOS = {
   accounts: accountsRepo,
@@ -90,7 +95,7 @@ async function fetchLedger(spreadsheetId: string): Promise<Ledger> {
   try {
     const res = await sheets.spreadsheets.values.batchGet({
       spreadsheetId,
-      ranges: KEYS.map((key) => REPOS[key].dataRange),
+      ranges: [...KEYS.map((key) => REPOS[key].dataRange), SETTINGS_RANGE],
     });
     const ranges = res.data.valueRanges ?? [];
     const ledger = {} as Record<LedgerKey, unknown[]>;
@@ -98,7 +103,9 @@ async function fetchLedger(spreadsheetId: string): Promise<Ledger> {
       const rows = (ranges[index]?.values as string[][] | undefined) ?? [];
       ledger[key] = REPOS[key].parse(rows);
     });
-    return ledger as unknown as Ledger;
+    const settings =
+      (ranges[KEYS.length]?.values as string[][] | undefined) ?? [];
+    return { ...(ledger as unknown as Ledger), settings };
   } catch (error) {
     // A tab added in a newer schema may not exist yet on this spreadsheet
     // (migration runs on workspace resolve). Only that case falls back to
@@ -107,17 +114,26 @@ async function fetchLedger(spreadsheetId: string): Promise<Ledger> {
     // tabs would show wrong balances and totals with no error.
     if (!isMissingTab(error)) throw error;
     console.warn("[ledger] a tab is missing, reading per tab", error);
+    const orEmpty = <T>(read: Promise<T[]>) =>
+      read.catch((tabError: unknown) => {
+        if (isMissingTab(tabError)) return [] as T[];
+        throw tabError;
+      });
     const entries = await Promise.all(
-      KEYS.map(async (key) => {
-        try {
-          return [key, await REPOS[key].list(spreadsheetId)] as const;
-        } catch (tabError) {
-          if (isMissingTab(tabError)) return [key, []] as const;
-          throw tabError;
-        }
-      }),
+      KEYS.map(
+        async (key) =>
+          [key, await orEmpty<unknown>(REPOS[key].list(spreadsheetId))] as const,
+      ),
     );
-    return Object.fromEntries(entries) as unknown as Ledger;
+    const settingsRes = await orEmpty(
+      sheets.spreadsheets.values
+        .get({ spreadsheetId, range: SETTINGS_RANGE })
+        .then((r) => (r.data.values as string[][] | undefined) ?? []),
+    );
+    return {
+      ...(Object.fromEntries(entries) as unknown as Ledger),
+      settings: settingsRes,
+    };
   }
 }
 

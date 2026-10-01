@@ -11,7 +11,10 @@ import { useLookups } from "@/hooks/use-lookups";
 import { useCurrency } from "@/hooks/use-settings";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { INVESTMENT_TYPE_LABELS } from "@/lib/labels";
-import type { InvestmentTransactionDirection } from "@/types/domain";
+import type {
+  InvestmentTransaction,
+  InvestmentTransactionDirection,
+} from "@/types/domain";
 import { cn } from "@/lib/utils";
 import {
   Sheet,
@@ -25,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/shared/error-state";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { InvestmentTransactionFormDialog } from "@/components/forms/investment-transaction-form-dialog";
 
 interface InvestmentDetailSheetProps {
@@ -42,6 +46,11 @@ export function InvestmentDetailSheet({
 }: InvestmentDetailSheetProps) {
   const investmentQuery = useInvestment(open ? investmentId : undefined);
   const deleteTransaction = useDeleteInvestmentTransaction();
+  // Confirm first, like loan payments: a loss entry's delete also changes
+  // the investment's current value.
+  const [deleting, setDeleting] = React.useState<
+    InvestmentTransaction | undefined
+  >();
   const { accountName } = useLookups();
   const currency = useCurrency();
   const [formOpen, setFormOpen] = React.useState(false);
@@ -220,9 +229,7 @@ export function InvestmentDetailSheet({
                           size="icon"
                           className="h-8 w-8 text-destructive"
                           disabled={deleteTransaction.isPending}
-                          onClick={() =>
-                            deleteTransaction.mutate(transaction.id)
-                          }
+                          onClick={() => setDeleting(transaction)}
                           aria-label="Delete entry"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -260,6 +267,25 @@ export function InvestmentDetailSheet({
           currentValue={investment.currentValue}
         />
       ) : null}
+
+      <ConfirmDialog
+        open={Boolean(deleting)}
+        onOpenChange={(next) => !next && setDeleting(undefined)}
+        title="Delete entry?"
+        description={
+          deleting?.direction === "loss"
+            ? "The loss will be added back to the investment's current value."
+            : "This entry will be removed from the investment's history."
+        }
+        confirmLabel="Delete"
+        loading={deleteTransaction.isPending}
+        onConfirm={() =>
+          deleting &&
+          deleteTransaction.mutate(deleting.id, {
+            onSuccess: () => setDeleting(undefined),
+          })
+        }
+      />
     </>
   );
 }

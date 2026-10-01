@@ -28,8 +28,15 @@ export interface FinanceWorkspace {
   reportsFolderId: string;
 }
 
-// Warm-instance cache so we don't re-scan Drive on every request.
-const CACHE_TTL_MS = 5 * 60 * 1000;
+// Warm-instance cache so we don't re-scan Drive on every request. The ids
+// practically never change; a deleted file surfaces as a 404 from Google.
+const CACHE_TTL_MS = 30 * 60 * 1000;
+/**
+ * Spreadsheets whose tabs and headers were already checked in this server
+ * instance. The check costs Sheets reads (60/min per user), and a schema
+ * only changes with a deploy, which starts fresh instances anyway.
+ */
+const migrated = new Set<string>();
 const workspaceCache = new Map<string, { value: FinanceWorkspace; ts: number }>();
 const inflight = new Map<string, Promise<FinanceWorkspace>>();
 
@@ -56,12 +63,13 @@ export async function ensureFinanceWorkspace(): Promise<FinanceWorkspace> {
   );
   if (!spreadsheetId) {
     spreadsheetId = await createFinanceSpreadsheet(rootFolderId);
-  } else {
+  } else if (!migrated.has(spreadsheetId)) {
     // Non-destructive migration: make sure tabs added in later schema versions
     // exist, and that existing tabs have any columns appended since they were
     // created (e.g. accountId on Loan Payments).
     await ensureSheetTabs(spreadsheetId);
     await ensureSheetHeaders(spreadsheetId);
+    migrated.add(spreadsheetId);
   }
 
   return { rootFolderId, spreadsheetId, receiptsFolderId, reportsFolderId };
@@ -107,6 +115,8 @@ async function ensureSheetTabs(spreadsheetId: string): Promise<void> {
 
   // Simultaneous addSheet calls don't fail: Sheets keeps all of them and
   // renames the extras "<title>_conflict<n>". Remove those while empty.
+  // Only possible when tabs were just added, so skip the re-read otherwise.
+  if (missing.length === 0) return;
   const conflicts = (await titles()).filter((tab) =>
     tabs.some((title) => tab.title.startsWith(`${title}_conflict`)),
   );

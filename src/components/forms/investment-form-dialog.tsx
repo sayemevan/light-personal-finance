@@ -40,13 +40,19 @@ interface InvestmentFormDialogProps {
   investment?: Investment;
 }
 
+/**
+ * Select value for "external source" (Radix Select can't hold ""). Without
+ * an explicit option, a linked account could never be unlinked again.
+ */
+const NO_ACCOUNT = "__none__";
+
 const emptyValues = (): CreateInvestmentInput => ({
   name: "",
   type: "stocks",
   purchaseDate: today(),
   amountInvested: undefined as unknown as number,
   currentValue: undefined as unknown as number,
-  accountId: "",
+  accountId: NO_ACCOUNT,
   notes: "",
 });
 
@@ -56,7 +62,20 @@ export function InvestmentFormDialog({
   investment,
 }: InvestmentFormDialogProps) {
   const isEdit = Boolean(investment);
-  const { accountOptions } = useLookups();
+  const { accountOptions, accounts } = useLookups();
+  const paidFromOptions = React.useMemo(() => {
+    const list = [
+      { label: "External source (not tracked)", value: NO_ACCOUNT },
+      ...accountOptions,
+    ];
+    // Keep a linked account visible even if it has since been archived.
+    const linked = investment?.accountId;
+    if (linked && !accountOptions.some((o) => o.value === linked)) {
+      const account = accounts.find((a) => a.id === linked);
+      if (account) list.push({ label: account.name, value: account.id });
+    }
+    return list;
+  }, [accountOptions, accounts, investment?.accountId]);
   const createInvestment = useCreateInvestment();
   const updateInvestment = useUpdateInvestment();
 
@@ -75,7 +94,7 @@ export function InvestmentFormDialog({
             purchaseDate: investment.purchaseDate,
             amountInvested: investment.amountInvested,
             currentValue: investment.currentValue,
-            accountId: investment.accountId ?? "",
+            accountId: investment.accountId || NO_ACCOUNT,
             notes: investment.notes ?? "",
           }
         : emptyValues(),
@@ -83,8 +102,14 @@ export function InvestmentFormDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, investment]);
 
-  const onSubmit = (values: CreateInvestmentInput) => {
+  const onSubmit = (formValues: CreateInvestmentInput) => {
     const done = () => onOpenChange(false);
+    // "" tells the server "external source" (and unlinks on edit).
+    const values = {
+      ...formValues,
+      accountId:
+        formValues.accountId === NO_ACCOUNT ? "" : formValues.accountId,
+    };
     if (isEdit && investment) {
       updateInvestment.mutate(
         { id: investment.id, input: values },
@@ -150,7 +175,7 @@ export function InvestmentFormDialog({
               label="Paid from account"
               placeholder="External source (not tracked)"
               description="Leave blank if funded from an untracked source. When set, the invested amount is deducted from that account."
-              options={accountOptions}
+              options={paidFromOptions}
             />
             <TextareaField
               control={form.control}

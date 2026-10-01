@@ -59,6 +59,11 @@ function markWritten(spreadsheetId: string): void {
   writeGeneration.set(spreadsheetId, spreadsheetGeneration(spreadsheetId) + 1);
 }
 
+/** For writes made outside a repository (e.g. Settings), so caches refresh. */
+export function noteSpreadsheetWrite(spreadsheetId: string): void {
+  markWritten(spreadsheetId);
+}
+
 /** Typed cell for `appendCells`; never parsed, so text can't become a formula. */
 function toCellData(value: Cell) {
   if (typeof value === "number") return { userEnteredValue: { numberValue: value } };
@@ -242,6 +247,15 @@ export class SheetRepository<T extends { id: string }> {
     id: string,
     patch: Partial<T>,
   ): Promise<T> {
+    return (await this.updateWithPrevious(spreadsheetId, id, patch)).updated;
+  }
+
+  /** Like `update`, also returning the record as it was before. */
+  async updateWithPrevious(
+    spreadsheetId: string,
+    id: string,
+    patch: Partial<T>,
+  ): Promise<{ previous: T; updated: T }> {
     const entry = await this.findEntry(spreadsheetId, id);
     if (!entry) throw AppError.notFound();
 
@@ -256,7 +270,7 @@ export class SheetRepository<T extends { id: string }> {
       requestBody: { values: [this.codec.toRow(merged)] },
     });
     markWritten(spreadsheetId);
-    return merged;
+    return { previous: entry.entity, updated: merged };
   }
 
   /** Blank the record's row; see the class comment for why it isn't deleted. */

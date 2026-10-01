@@ -51,11 +51,11 @@ async function transactionsFor(
 export async function getInvestment(
   id: string,
 ): Promise<Investment & { transactions: InvestmentTransaction[] }> {
-  const spreadsheetId = await getSpreadsheetId();
-  const investment = await investmentsRepo.findById(spreadsheetId, id);
+  const ledger = await loadLedger();
+  const investment = ledger.investments.find((i) => i.id === id);
   if (!investment) throw AppError.notFound("Investment not found.");
 
-  const transactions = (await investmentTransactionsRepo.list(spreadsheetId))
+  const transactions = ledger.investmentTransactions
     .filter((t) => t.investmentId === id)
     .sort((a, b) => b.date.localeCompare(a.date));
 
@@ -157,9 +157,18 @@ export async function addInvestmentTransaction(
     const nextValue = Number(
       (investment.currentValue - input.amount).toFixed(2),
     );
-    await investmentsRepo.update(spreadsheetId, investment.id, {
-      currentValue: nextValue,
-    });
+    try {
+      await investmentsRepo.update(spreadsheetId, investment.id, {
+        currentValue: nextValue,
+      });
+    } catch (error) {
+      // Don't keep a loss entry whose value change never happened: deleting
+      // it later would add back money that was never taken off.
+      await investmentTransactionsRepo
+        .remove(spreadsheetId, created.id)
+        .catch(() => undefined);
+      throw error;
+    }
   }
 
   return created;
@@ -173,6 +182,10 @@ export async function deleteInvestmentTransaction(id: string): Promise<void> {
     id,
   );
   if (!transaction) throw AppError.notFound("Transaction not found.");
+
+  // Remove first: a second, overlapping delete of the same entry then gets
+  // NOT_FOUND here instead of restoring the loss a second time.
+  await investmentTransactionsRepo.remove(spreadsheetId, id);
 
   // Reversing a loss restores the value it removed from the investment.
   if (transaction.direction === "loss") {
@@ -189,6 +202,4 @@ export async function deleteInvestmentTransaction(id: string): Promise<void> {
       });
     }
   }
-
-  await investmentTransactionsRepo.remove(spreadsheetId, id);
 }

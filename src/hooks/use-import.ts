@@ -12,9 +12,12 @@ import type {
   ImportTransactionsInput,
 } from "@/lib/schemas/import";
 
+// Imports can add merchants/tags (suggestions) and new years (year filter).
 const INVALIDATE = [
   queryKeys.expenses,
   queryKeys.income,
+  queryKeys.suggestions,
+  queryKeys.archiveYears,
   ...derivedKeys,
 ] as const;
 

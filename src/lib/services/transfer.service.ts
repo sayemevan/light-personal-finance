@@ -1,5 +1,6 @@
 import "server-only";
-import { accountsRepo, transfersRepo } from "@/lib/repositories";
+import { transfersRepo } from "@/lib/repositories";
+import { loadLedger } from "@/lib/services/ledger.service";
 import { getSpreadsheetId } from "@/lib/google/workspace";
 import { queryCollection } from "@/lib/services/query";
 import { generateId } from "@/lib/id";
@@ -22,11 +23,7 @@ export interface TransferListQuery {
 export async function listTransfers(
   query: TransferListQuery,
 ): Promise<Paginated<Transfer>> {
-  const spreadsheetId = await getSpreadsheetId();
-  const [transfers, accounts] = await Promise.all([
-    transfersRepo.list(spreadsheetId),
-    accountsRepo.list(spreadsheetId),
-  ]);
+  const { transfers, accounts } = await loadLedger();
   const accountName = (id: string) =>
     accounts.find((a) => a.id === id)?.name ?? "";
 
@@ -71,7 +68,7 @@ async function assertAccounts(
   spreadsheetId: string,
   ids: string[],
 ): Promise<void> {
-  const accounts = await accountsRepo.list(spreadsheetId);
+  const { accounts } = await loadLedger(spreadsheetId);
   for (const id of ids) {
     if (!accounts.some((a) => a.id === id)) {
       throw AppError.validation("Account not found.");

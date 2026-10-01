@@ -1,7 +1,5 @@
 import "server-only";
 import {
-  accountsRepo,
-  categoriesRepo,
   expensesRepo,
   loansRepo,
 } from "@/lib/repositories";
@@ -29,11 +27,9 @@ import type {
 export async function listExpenses(
   query: ExpenseListQuery,
 ): Promise<Paginated<Expense>> {
-  const { spreadsheetId } = await getWorkspaceForCurrentUser();
-  const [expenses, accounts, categories] = await Promise.all([
+  const [expenses, { accounts, categories }] = await Promise.all([
     getExpensesForYear(query.year),
-    accountsRepo.list(spreadsheetId),
-    categoriesRepo.list(spreadsheetId),
+    loadLedger(),
   ]);
 
   const accountName = (id: string) =>
@@ -143,10 +139,22 @@ export async function updateExpense(
 ): Promise<Expense> {
   const { spreadsheetId } = await getWorkspaceForCurrentUser();
   await checkReceiptId(input.receiptFileId);
-  return expensesRepo.update(spreadsheetId, id, {
-    ...input,
-    updatedAt: new Date().toISOString(),
-  });
+  const { previous, updated } = await expensesRepo.updateWithPrevious(
+    spreadsheetId,
+    id,
+    { ...input, updatedAt: new Date().toISOString() },
+  );
+  // A replaced or removed receipt would otherwise stay in Drive forever.
+  // Best effort: the edit has already been saved.
+  if (
+    previous.receiptFileId &&
+    previous.receiptFileId !== updated.receiptFileId
+  ) {
+    await removeReceipt(previous.receiptFileId).catch((error) =>
+      console.error("[expense] failed to delete replaced receipt", error),
+    );
+  }
+  return updated;
 }
 
 export async function deleteExpense(id: string): Promise<void> {

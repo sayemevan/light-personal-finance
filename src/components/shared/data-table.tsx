@@ -207,6 +207,17 @@ export function DataTable<T>({
     if (!isServer && localPage > pageCount) setLocalPage(pageCount);
   }, [isServer, localPage, pageCount]);
 
+  // Same in server mode: deleting the only row on the last page would
+  // otherwise leave an empty page with Next disabled. Only once the count is
+  // settled, so a deep link isn't reset while its page is still loading.
+  const serverPage = server?.page;
+  const serverFetching = server?.isFetching;
+  const onServerPageChange = server?.onPageChange;
+  React.useEffect(() => {
+    if (!isServer || serverFetching || serverPage === undefined) return;
+    if (serverPage > pageCount) onServerPageChange?.(pageCount);
+  }, [isServer, serverFetching, serverPage, pageCount, onServerPageChange]);
+
   const rows = React.useMemo(() => {
     if (isServer) return processed;
     const start = (page - 1) * pageSize;

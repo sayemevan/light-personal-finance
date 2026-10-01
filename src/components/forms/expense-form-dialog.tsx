@@ -82,7 +82,7 @@ export function ExpenseFormDialog({
   expense,
 }: ExpenseFormDialogProps) {
   const isEdit = Boolean(expense);
-  const { accountOptions, categoryOptions } = useLookups();
+  const { accountOptionsWith, categoryOptions } = useLookups();
   const currency = useCurrency();
   const suggestions = useEntrySuggestions(open);
   const createExpense = useCreateExpense();
@@ -248,7 +248,7 @@ export function ExpenseFormDialog({
                   name="categoryId"
                   label="Category"
                   placeholder="Category"
-                  options={categoryOptions("expense")}
+                  options={categoryOptions("expense", expense?.categoryId)}
                 />
               </div>
               <SelectField
@@ -256,7 +256,7 @@ export function ExpenseFormDialog({
                 name="accountId"
                 label="Paid from"
                 placeholder="Account"
-                options={accountOptions}
+                options={accountOptionsWith(expense?.accountId)}
               />
             </div>
             <div className="grid grid-cols-2 gap-3 sm:gap-4">
