@@ -3,7 +3,10 @@
 import * as React from "react";
 import { toast } from "sonner";
 
-const SW_URL = "/sw.js";
+/** The build id names the worker's caches; see public/sw.js. */
+const SW_URL = `/sw.js?v=${encodeURIComponent(
+  process.env.NEXT_PUBLIC_BUILD_ID ?? "dev",
+)}`;
 
 function shouldRegister(): boolean {
   return (

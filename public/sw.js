@@ -4,7 +4,10 @@
  *
  * - Precaches the offline fallback page and icons.
  * - /_next/static/* and fonts: cache-first.
- * - Navigations: network-first (4s timeout) → cached copy → /offline.html.
+ * - Navigations: network-first; the cached copy (then /offline.html) is used
+ *   only when the network fails or the device is offline, never just because
+ *   the network is slow (a stale page can reference chunks a newer deploy
+ *   has removed).
  * - GET /api/* (except /api/auth/*): network-first → last cached response,
  *   marked with `x-from-cache: 1`.
  * - Navigations to /api/* (OAuth callback, downloads): answered with the
@@ -12,13 +15,18 @@
  * - periodicsync "reminders": fetches /api/reminders and shows notifications
  *   (deduped per day).
  *
- * Bump VERSION to invalidate every versioned cache on the next deploy.
+ * Static and page caches are per build: the page registers
+ * `/sw.js?v=<build id>`, so each deploy installs a new worker whose caches
+ * start empty, and activating it deletes the previous build's caches (old
+ * hashed chunks would otherwise pile up forever). API data keeps one cache
+ * across deploys so offline data survives updates; it is wiped when another
+ * user signs in (CLEAR).
  */
 
-const VERSION = "v1";
-const STATIC_CACHE = `pf-static-${VERSION}`;
-const PAGES_CACHE = `pf-pages-${VERSION}`;
-const API_CACHE = `pf-api-${VERSION}`;
+const BUILD = new URL(self.location.href).searchParams.get("v") || "dev";
+const STATIC_CACHE = `pf-static-${BUILD}`;
+const PAGES_CACHE = `pf-pages-${BUILD}`;
+const API_CACHE = "pf-api-v1";
 /** Unversioned: small bookkeeping (notified reminder ids) that survives updates. */
 const META_CACHE = "pf-meta";
 const NOTIFIED_KEY = "/__pf/notified-reminders";
@@ -31,7 +39,6 @@ const PRECACHE_URLS = [
   "/icons/icon-maskable-512.png",
   "/icons/apple-touch-icon.png",
 ];
-const NAVIGATION_TIMEOUT_MS = 4000;
 const NOTIFICATION_ICON = "/icons/icon-192.png";
 
 // ---------------------------------------------------------------------------
@@ -172,11 +179,20 @@ async function cacheFirst(request, cacheName) {
   }
 }
 
-/** Network-first for page loads, with a timeout before trying the cache. */
+/**
+ * Network-first for page loads. Falls back to the cached copy only when the
+ * device is offline or the request fails, so a slow but working connection
+ * always gets the current page.
+ */
 async function navigationHandler(event, request) {
   const cache = await caches.open(PAGES_CACHE);
 
-  const network = (async () => {
+  if (self.navigator && self.navigator.onLine === false) {
+    const cached = await cache.match(request);
+    if (cached) return cached;
+  }
+
+  try {
     const preloaded = await Promise.resolve(event.preloadResponse).catch(
       () => undefined,
     );
@@ -186,20 +202,6 @@ async function navigationHandler(event, request) {
       event.waitUntil(cache.put(request, copy).catch(() => undefined));
     }
     return response;
-  })();
-  // Keep the network request alive even if we answer from the cache first.
-  event.waitUntil(network.catch(() => undefined));
-
-  const timedOut = new Promise((resolve) =>
-    setTimeout(() => resolve("timeout"), NAVIGATION_TIMEOUT_MS),
-  );
-
-  try {
-    const winner = await Promise.race([network, timedOut]);
-    if (winner !== "timeout") return winner;
-    const cached = await cache.match(request);
-    if (cached) return cached;
-    return await network; // Nothing cached: keep waiting for the network.
   } catch (error) {
     const cached = await cache.match(request);
     if (cached) return cached;
