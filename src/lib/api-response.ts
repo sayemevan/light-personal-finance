@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
-import { AppError, isAppError } from "@/lib/errors";
+import { AppError, fromGoogleError, isAppError } from "@/lib/errors";
 import type { ApiResponse } from "@/types/api";
 
 /** Wrap a successful payload in the standard envelope. */
@@ -10,7 +10,8 @@ export function ok<T>(data: T, init?: ResponseInit) {
 
 /**
  * Convert any thrown value into a consistent error response. Zod validation
- * errors and `AppError`s are mapped precisely; everything else becomes a 500.
+ * errors, `AppError`s and Google API errors are mapped precisely; everything
+ * else becomes a 500.
  */
 export function fail(error: unknown) {
   if (error instanceof ZodError) {
@@ -27,17 +28,19 @@ export function fail(error: unknown) {
     );
   }
 
-  if (isAppError(error)) {
+  const appError = isAppError(error) ? error : fromGoogleError(error);
+  if (appError) {
+    if (!isAppError(error)) console.error("[api] google error", error);
     return NextResponse.json<ApiResponse<never>>(
       {
         ok: false,
         error: {
-          code: error.code,
-          message: error.message,
-          details: error.details,
+          code: appError.code,
+          message: appError.message,
+          details: appError.details,
         },
       },
-      { status: error.status },
+      { status: appError.status },
     );
   }
 

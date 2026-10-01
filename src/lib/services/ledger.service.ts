@@ -101,20 +101,29 @@ async function fetchLedger(spreadsheetId: string): Promise<Ledger> {
     return ledger as unknown as Ledger;
   } catch (error) {
     // A tab added in a newer schema may not exist yet on this spreadsheet
-    // (migration runs on workspace resolve). Fall back to per-tab reads that
-    // treat a missing tab as empty.
-    console.warn("[ledger] batch read failed, falling back per tab", error);
+    // (migration runs on workspace resolve). Only that case falls back to
+    // per-tab reads with the missing tab treated as empty. Anything else
+    // (rate limit, expired token, outage) must surface: reading it as empty
+    // tabs would show wrong balances and totals with no error.
+    if (!isMissingTab(error)) throw error;
+    console.warn("[ledger] a tab is missing, reading per tab", error);
     const entries = await Promise.all(
       KEYS.map(async (key) => {
         try {
           return [key, await REPOS[key].list(spreadsheetId)] as const;
-        } catch {
-          return [key, []] as const;
+        } catch (tabError) {
+          if (isMissingTab(tabError)) return [key, []] as const;
+          throw tabError;
         }
       }),
     );
     return Object.fromEntries(entries) as unknown as Ledger;
   }
+}
+
+/** Sheets' error for a range on a tab that doesn't exist. */
+function isMissingTab(error: unknown): boolean {
+  return error instanceof Error && /unable to parse range/i.test(error.message);
 }
 
 /** Load the whole ledger for the signed-in user in a single batched read. */

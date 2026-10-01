@@ -7,7 +7,7 @@ import {
 } from "@/lib/repositories";
 import { loadLedger } from "@/lib/services/ledger.service";
 import { getWorkspaceForCurrentUser } from "@/lib/google/workspace";
-import { deleteFile } from "@/lib/google/drive";
+import { assertReceipt, removeReceipt } from "@/lib/services/receipt.service";
 import { getExpensesForYear } from "@/lib/services/history.service";
 import { queryCollection } from "@/lib/services/query";
 import { generateId } from "@/lib/id";
@@ -93,11 +93,26 @@ export async function getExpense(id: string): Promise<Expense> {
   return expense;
 }
 
+/** `receiptFileId` comes from the client; only accept an actual receipt. */
+async function checkReceiptId(
+  receiptFileId: string | undefined,
+): Promise<void> {
+  if (!receiptFileId) return;
+  try {
+    await assertReceipt(receiptFileId);
+  } catch {
+    throw AppError.validation("Receipt not found.", {
+      receiptFileId: ["Upload the receipt again."],
+    });
+  }
+}
+
 export async function createExpense(
   input: CreateExpenseInput,
   options: { id?: string } = {},
 ): Promise<Expense> {
   const { spreadsheetId } = await getWorkspaceForCurrentUser();
+  await checkReceiptId(input.receiptFileId);
   const now = new Date().toISOString();
   const expense: Expense = {
     id: options.id ?? generateId(),
@@ -121,6 +136,7 @@ export async function updateExpense(
   input: Partial<CreateExpenseInput>,
 ): Promise<Expense> {
   const { spreadsheetId } = await getWorkspaceForCurrentUser();
+  await checkReceiptId(input.receiptFileId);
   return expensesRepo.update(spreadsheetId, id, {
     ...input,
     updatedAt: new Date().toISOString(),
@@ -133,9 +149,11 @@ export async function deleteExpense(id: string): Promise<void> {
   if (!expense) throw AppError.notFound("Expense not found.");
 
   // Best-effort receipt cleanup; never block deletion on Drive errors.
+  // removeReceipt refuses ids that aren't receipts (e.g. a tampered row
+  // pointing at the Finance spreadsheet).
   if (expense.receiptFileId) {
     try {
-      await deleteFile(expense.receiptFileId);
+      await removeReceipt(expense.receiptFileId);
     } catch (error) {
       console.error("[expense] failed to delete receipt", error);
     }

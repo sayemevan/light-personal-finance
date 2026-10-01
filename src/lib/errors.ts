@@ -70,3 +70,48 @@ export class AppError extends Error {
 export function isAppError(error: unknown): error is AppError {
   return error instanceof AppError;
 }
+
+/**
+ * Translate an error thrown by a Google API client (gaxios) into an
+ * `AppError`, or null if it isn't one. Google signals rate limits with 429 or
+ * with 403 + a rate-limit reason, so both map to RATE_LIMITED.
+ */
+export function fromGoogleError(error: unknown): AppError | null {
+  if (!(error instanceof Error)) return null;
+  const response = (error as { response?: { status?: unknown } }).response;
+  const status = typeof response?.status === "number" ? response.status : null;
+  if (status === null) return null;
+
+  const message = error.message;
+  const rateLimited =
+    status === 429 || (status === 403 && /rate ?limit|quota/i.test(message));
+  if (rateLimited) {
+    return new AppError(
+      "RATE_LIMITED",
+      "Google is limiting requests right now. Try again in a minute.",
+      { cause: error },
+    );
+  }
+  if (status === 401) {
+    return new AppError(
+      "UNAUTHENTICATED",
+      "Your Google sign-in expired. Sign in again.",
+      { cause: error },
+    );
+  }
+  if (status === 403) {
+    return new AppError("FORBIDDEN", "Google denied access to this file.", {
+      cause: error,
+    });
+  }
+  if (status === 404) {
+    return new AppError("NOT_FOUND", "Not found in your Google Drive.", {
+      cause: error,
+    });
+  }
+  return new AppError(
+    "GOOGLE_API",
+    "Google Sheets or Drive returned an error. Try again.",
+    { cause: error },
+  );
+}
