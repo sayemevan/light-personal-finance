@@ -21,6 +21,11 @@ import {
 
 import { cn } from "@/lib/utils";
 import type { NavIcon, NavItem } from "@/config/navigation";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 /** Resolves serializable icon names from the nav config to Lucide components. */
 export const iconMap: Record<NavIcon, LucideIcon> = {
@@ -43,9 +48,11 @@ interface NavLinksProps {
   items: NavItem[];
   /** Called after a link is clicked (e.g. to close the mobile drawer). */
   onNavigate?: () => void;
+  /** Icon-only rail; labels move into tooltips. */
+  collapsed?: boolean;
 }
 
-export function NavLinks({ items, onNavigate }: NavLinksProps) {
+export function NavLinks({ items, onNavigate, collapsed = false }: NavLinksProps) {
   const pathname = usePathname();
 
   return (
@@ -54,22 +61,31 @@ export function NavLinks({ items, onNavigate }: NavLinksProps) {
         const isActive =
           pathname === item.href || pathname.startsWith(`${item.href}/`);
         const Icon = iconMap[item.icon];
-        return (
+        const link = (
           <Link
             key={item.href}
             href={item.href}
             onClick={onNavigate}
             aria-current={isActive ? "page" : undefined}
+            aria-label={collapsed ? item.title : undefined}
             className={cn(
               "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+              collapsed && "justify-center px-0",
               isActive
                 ? "bg-primary/10 text-primary"
                 : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
             )}
           >
             <Icon className="h-4 w-4 shrink-0" />
-            <span className="truncate">{item.title}</span>
+            {collapsed ? null : <span className="truncate">{item.title}</span>}
           </Link>
+        );
+        if (!collapsed) return link;
+        return (
+          <Tooltip key={item.href}>
+            <TooltipTrigger asChild>{link}</TooltipTrigger>
+            <TooltipContent side="right">{item.title}</TooltipContent>
+          </Tooltip>
         );
       })}
     </nav>
