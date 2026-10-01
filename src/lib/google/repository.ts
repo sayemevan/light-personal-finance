@@ -1,6 +1,7 @@
 import "server-only";
 import { getSheetsClient } from "@/lib/google/client";
 import { AppError } from "@/lib/errors";
+import { withSpreadsheetLock } from "@/lib/google/lock";
 
 /** Cell primitives Google Sheets accepts on write. */
 export type Cell = string | number | boolean;
@@ -57,6 +58,28 @@ export function spreadsheetGeneration(spreadsheetId: string): number {
 
 function markWritten(spreadsheetId: string): void {
   writeGeneration.set(spreadsheetId, spreadsheetGeneration(spreadsheetId) + 1);
+}
+
+/**
+ * Lock held around anything that locates a row by position and then writes or
+ * deletes it. Row deletions shift every row below, so without it a concurrent
+ * delete can make an update or delete land on a different record.
+ */
+export const ROWS_LOCK = "rows";
+
+export function withRowsLock<T>(
+  spreadsheetId: string,
+  fn: () => Promise<T>,
+  options?: { ttlMs?: number; waitMs?: number },
+): Promise<T> {
+  return withSpreadsheetLock(spreadsheetId, ROWS_LOCK, fn, options);
+}
+
+/** Typed cell for `appendCells`; never parsed, so text can't become a formula. */
+function toCellData(value: Cell) {
+  if (typeof value === "number") return { userEnteredValue: { numberValue: value } };
+  if (typeof value === "boolean") return { userEnteredValue: { boolValue: value } };
+  return { userEnteredValue: { stringValue: value } };
 }
 
 // Cache the numeric sheetId per (spreadsheet, tab) — needed for row deletion.
@@ -157,24 +180,70 @@ export class SheetRepository<T extends { id: string }> {
   }
 
   /**
-   * Replace every data row (header stays). Used after archive so remaining
-   * rows plus rollups are written only once the archive copy has succeeded.
+   * In one atomic batch, delete the rows holding `ids` and append `entities`.
+   * Row positions are read fresh under the rows lock, so rows added by other
+   * requests meanwhile are left alone, and a failure changes nothing.
    */
-  async replaceAll(spreadsheetId: string, entities: T[]): Promise<void> {
-    markWritten(spreadsheetId);
-    const sheets = await getSheetsClient();
-    await sheets.spreadsheets.values.clear({
-      spreadsheetId,
-      range: this.dataRange,
+  async removeIdsAndAppend(
+    spreadsheetId: string,
+    ids: ReadonlySet<string>,
+    entities: T[],
+  ): Promise<void> {
+    await withRowsLock(spreadsheetId, async () => {
+      const sheets = await getSheetsClient();
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: `${this.tab}!A2:A`,
+      });
+      const column = (res.data.values as string[][] | undefined) ?? [];
+
+      // 0-based sheet indexes (row 1 is the header), merged into contiguous
+      // runs and deleted bottom-up so earlier deletes don't shift later ones.
+      const indexes = column
+        .map((row, i) => (row?.[0] && ids.has(row[0]) ? i + 1 : -1))
+        .filter((index) => index >= 0);
+      const runs: { start: number; end: number }[] = [];
+      for (const index of indexes) {
+        const last = runs[runs.length - 1];
+        if (last && last.end === index) last.end = index + 1;
+        else runs.push({ start: index, end: index + 1 });
+      }
+      if (runs.length === 0 && entities.length === 0) return;
+
+      const sheetId = await getSheetId(spreadsheetId, this.tab);
+      markWritten(spreadsheetId);
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [
+            ...runs.reverse().map((run) => ({
+              deleteDimension: {
+                range: {
+                  sheetId,
+                  dimension: "ROWS",
+                  startIndex: run.start,
+                  endIndex: run.end,
+                },
+              },
+            })),
+            ...(entities.length > 0
+              ? [
+                  {
+                    appendCells: {
+                      sheetId,
+                      rows: entities.map((entity) => ({
+                        values: this.codec.toRow(entity).map(toCellData),
+                      })),
+                      fields: "userEnteredValue",
+                    },
+                  },
+                ]
+              : []),
+          ],
+        },
+      });
+      markWritten(spreadsheetId);
     });
-    if (entities.length === 0) return;
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `${this.tab}!A2`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: entities.map((entity) => this.codec.toRow(entity)) },
-    });
-    markWritten(spreadsheetId);
   }
 
   async update(
@@ -182,45 +251,49 @@ export class SheetRepository<T extends { id: string }> {
     id: string,
     patch: Partial<T>,
   ): Promise<T> {
-    const entry = await this.findEntry(spreadsheetId, id);
-    if (!entry) throw AppError.notFound();
+    return withRowsLock(spreadsheetId, async () => {
+      const entry = await this.findEntry(spreadsheetId, id);
+      if (!entry) throw AppError.notFound();
 
-    const merged = { ...entry.entity, ...patch, id } as T;
-    const sheets = await getSheetsClient();
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `${this.tab}!A${entry.rowNumber}:${this.lastColumn}${entry.rowNumber}`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: [this.codec.toRow(merged)] },
+      const merged = { ...entry.entity, ...patch, id } as T;
+      const sheets = await getSheetsClient();
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${this.tab}!A${entry.rowNumber}:${this.lastColumn}${entry.rowNumber}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [this.codec.toRow(merged)] },
+      });
+      markWritten(spreadsheetId);
+      return merged;
     });
-    markWritten(spreadsheetId);
-    return merged;
   }
 
   async remove(spreadsheetId: string, id: string): Promise<void> {
-    const entry = await this.findEntry(spreadsheetId, id);
-    if (!entry) throw AppError.notFound();
+    await withRowsLock(spreadsheetId, async () => {
+      const entry = await this.findEntry(spreadsheetId, id);
+      if (!entry) throw AppError.notFound();
 
-    const sheetId = await getSheetId(spreadsheetId, this.tab);
-    const sheets = await getSheetsClient();
-    await sheets.spreadsheets.batchUpdate({
-      spreadsheetId,
-      requestBody: {
-        requests: [
-          {
-            deleteDimension: {
-              range: {
-                sheetId,
-                dimension: "ROWS",
-                startIndex: entry.rowNumber - 1,
-                endIndex: entry.rowNumber,
+      const sheetId = await getSheetId(spreadsheetId, this.tab);
+      const sheets = await getSheetsClient();
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [
+            {
+              deleteDimension: {
+                range: {
+                  sheetId,
+                  dimension: "ROWS",
+                  startIndex: entry.rowNumber - 1,
+                  endIndex: entry.rowNumber,
+                },
               },
             },
-          },
-        ],
-      },
+          ],
+        },
+      });
+      markWritten(spreadsheetId);
     });
-    markWritten(spreadsheetId);
   }
 
   /** Locate a record and the 1-based sheet row it occupies. */

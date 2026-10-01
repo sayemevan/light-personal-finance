@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { todayISO as today } from "@/lib/recurring";
 
 import { createIncomeSchema, type CreateIncomeInput } from "@/lib/schemas";
 import { useLookups } from "@/hooks/use-lookups";
@@ -33,8 +34,6 @@ interface IncomeFormDialogProps {
   onOpenChange: (open: boolean) => void;
   income?: Income;
 }
-
-const today = () => new Date().toISOString().slice(0, 10);
 
 function blankValues(): CreateIncomeInput {
   const memory = readEntryMemory("income");

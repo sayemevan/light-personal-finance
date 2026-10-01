@@ -80,11 +80,12 @@ async function assertAccounts(
 
 export async function createTransfer(
   input: CreateTransferInput,
+  options: { id?: string } = {},
 ): Promise<Transfer> {
   const spreadsheetId = await getSpreadsheetId();
   await assertAccounts(spreadsheetId, [input.fromAccountId, input.toAccountId]);
   const transfer: Transfer = {
-    id: generateId(),
+    id: options.id ?? generateId(),
     date: input.date,
     amount: input.amount,
     fromAccountId: input.fromAccountId,

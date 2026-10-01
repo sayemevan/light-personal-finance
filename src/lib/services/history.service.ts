@@ -1,6 +1,7 @@
 import "server-only";
 
 import {
+  ARCHIVE_NOTE_PREFIX,
   ARCHIVE_SUMMARY_TAB,
   DRIVE_STRUCTURE,
   SHEET_TABS,
@@ -47,9 +48,26 @@ async function findArchiveId(
 }
 
 /** Combine two row sets, keeping live-sheet rows when an id appears in both. */
-function mergeById<T extends { id: string }>(live: T[], archived: T[]): T[] {
-  const seen = new Set(live.map((row) => row.id));
-  return [...live, ...archived.filter((row) => !seen.has(row.id))];
+/**
+ * Combine live and archived rows for a past year. Archiving leaves one monthly
+ * rollup row in the live sheet per month it moved, so a rollup is dropped when
+ * the archive holds that month's detail rows; otherwise it would be counted
+ * on top of them.
+ */
+function mergeById<T extends { id: string; date: string; notes?: string }>(
+  live: T[],
+  archived: T[],
+): T[] {
+  const archivedMonths = new Set(archived.map((row) => row.date.slice(0, 7)));
+  const liveKept = live.filter(
+    (row) =>
+      !(
+        (row.notes ?? "").startsWith(ARCHIVE_NOTE_PREFIX) &&
+        archivedMonths.has(row.date.slice(0, 7))
+      ),
+  );
+  const seen = new Set(liveKept.map((row) => row.id));
+  return [...liveKept, ...archived.filter((row) => !seen.has(row.id))];
 }
 
 export async function getExpensesForYear(year: string): Promise<Expense[]> {

@@ -15,6 +15,17 @@ export default auth((req) => {
   );
 
   if (!isLoggedIn && !isPublic) {
+    // API callers need a real 401, not a redirect to an HTML page: fetch would
+    // follow it and treat the sign-in page as a successful response.
+    if (nextUrl.pathname.startsWith("/api/")) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: { code: "UNAUTHENTICATED", message: "You must be signed in." },
+        },
+        { status: 401 },
+      );
+    }
     const signInUrl = new URL("/sign-in", nextUrl);
     signInUrl.searchParams.set("callbackUrl", nextUrl.pathname);
     return NextResponse.redirect(signInUrl);

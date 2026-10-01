@@ -85,11 +85,14 @@ export async function getIncome(id: string): Promise<Income> {
   return income;
 }
 
-export async function createIncome(input: CreateIncomeInput): Promise<Income> {
+export async function createIncome(
+  input: CreateIncomeInput,
+  options: { id?: string } = {},
+): Promise<Income> {
   const spreadsheetId = await getSpreadsheetId();
   const now = new Date().toISOString();
   const income: Income = {
-    id: generateId(),
+    id: options.id ?? generateId(),
     date: input.date,
     amount: input.amount,
     categoryId: input.categoryId,

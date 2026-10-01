@@ -16,7 +16,11 @@ import {
 } from "@/lib/google/workspace";
 import { generateId } from "@/lib/id";
 import { AppError } from "@/lib/errors";
-import type { Cell } from "@/lib/google/repository";
+import {
+  withRowsLock,
+  type Cell,
+  type SheetRepository,
+} from "@/lib/google/repository";
 import { expensesRepo, incomeRepo } from "@/lib/repositories";
 import type { ArchiveResult, ArchiveYearSummary } from "@/types/api";
 import type { CategoryKind, Expense, Income } from "@/types/domain";
@@ -320,58 +324,74 @@ function rollupIncome(rows: Income[], now: string): Income[] {
   return rollups;
 }
 
+/** Ids already present in an archive's detail tab. */
+async function archivedIds(archiveId: string, detailTab: string): Promise<Set<string>> {
+  const sheets = await getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: archiveId,
+    range: `${detailTab}!A2:A`,
+  });
+  return new Set(
+    ((res.data.values as string[][] | undefined) ?? [])
+      .map((row) => row[0])
+      .filter((id): id is string => Boolean(id)),
+  );
+}
+
+interface ArchiveTarget<T extends Archiveable> {
+  repo: SheetRepository<T>;
+  title: string;
+  tab: typeof SHEET_TABS.expenses | typeof SHEET_TABS.income;
+  rollup: (rows: T[], now: string) => T[];
+}
+
 /**
  * Copy expense or income detail rows into a dedicated Drive archive
- * spreadsheet, then replace them in the live tab with per-account yearly
- * rollups so balances and yearly cash flow stay intact.
+ * spreadsheet, then replace them in the live tab with per-account monthly
+ * rollups so balances and cash flow stay intact.
+ *
+ * Safe to retry and to run alongside normal use:
+ * - the whole run holds the rows lock, so edits and deletes wait for it and a
+ *   second archive can't start;
+ * - rows already in the archive (from a run that failed half-way) are not
+ *   copied again;
+ * - the live tab is changed in one atomic batch that deletes only the archived
+ *   rows, so entries added meanwhile survive and a failure changes nothing.
  */
 export async function archiveTransactions(
   kind: CategoryKind,
 ): Promise<ArchiveResult> {
   const { spreadsheetId, rootFolderId } = await getWorkspaceForCurrentUser();
+  const result = await withRowsLock(
+    spreadsheetId,
+    () =>
+      kind === "expense"
+        ? archiveInto(kind, spreadsheetId, rootFolderId, {
+            repo: expensesRepo,
+            title: DRIVE_STRUCTURE.expenseArchive,
+            tab: SHEET_TABS.expenses,
+            rollup: rollupExpenses,
+          })
+        : archiveInto(kind, spreadsheetId, rootFolderId, {
+            repo: incomeRepo,
+            title: DRIVE_STRUCTURE.incomeArchive,
+            tab: SHEET_TABS.income,
+            rollup: rollupIncome,
+          }),
+    { ttlMs: 5 * 60_000 },
+  );
+  invalidateWorkspaceCache();
+  return result;
+}
+
+async function archiveInto<T extends Archiveable>(
+  kind: CategoryKind,
+  spreadsheetId: string,
+  rootFolderId: string,
+  target: ArchiveTarget<T>,
+): Promise<ArchiveResult> {
   const now = new Date().toISOString();
-
-  if (kind === "expense") {
-    const all = await expensesRepo.list(spreadsheetId);
-    const toArchive = all.filter(
-      (row) => !isArchiveRollup(row.notes) && calendarYear(row.date),
-    );
-    if (toArchive.length === 0) {
-      return { kind, years: [], archivedCount: 0, rollupCount: 0 };
-    }
-
-    const archiveIds = new Set(toArchive.map((row) => row.id));
-    const keep = all.filter((row) => !archiveIds.has(row.id));
-    const byYear = groupByYear(toArchive);
-    const years = yearSummaries(byYear);
-    const rollups = rollupExpenses(toArchive, now);
-
-    const archiveId = await ensureArchiveSpreadsheet(
-      DRIVE_STRUCTURE.expenseArchive,
-      SHEET_TABS.expenses,
-      SHEET_COLUMNS[SHEET_TABS.expenses],
-      rootFolderId,
-    );
-
-    await appendArchivePayload(
-      archiveId,
-      SHEET_TABS.expenses,
-      toArchive.map((row) => expensesRepo.toRow(row)),
-      years.map((year) => [year.year, year.total, now, year.rowCount]),
-    );
-
-    await expensesRepo.replaceAll(spreadsheetId, [...keep, ...rollups]);
-    invalidateWorkspaceCache();
-
-    return {
-      kind,
-      years,
-      archivedCount: toArchive.length,
-      rollupCount: rollups.length,
-    };
-  }
-
-  const all = await incomeRepo.list(spreadsheetId);
+  const all = await target.repo.list(spreadsheetId);
   const toArchive = all.filter(
     (row) => !isArchiveRollup(row.notes) && calendarYear(row.date),
   );
@@ -379,28 +399,37 @@ export async function archiveTransactions(
     return { kind, years: [], archivedCount: 0, rollupCount: 0 };
   }
 
-  const archiveIds = new Set(toArchive.map((row) => row.id));
-  const keep = all.filter((row) => !archiveIds.has(row.id));
-  const byYear = groupByYear(toArchive);
-  const years = yearSummaries(byYear);
-  const rollups = rollupIncome(toArchive, now);
+  const years = yearSummaries(groupByYear(toArchive));
+  const rollups = target.rollup(toArchive, now);
 
   const archiveId = await ensureArchiveSpreadsheet(
-    DRIVE_STRUCTURE.incomeArchive,
-    SHEET_TABS.income,
-    SHEET_COLUMNS[SHEET_TABS.income],
+    target.title,
+    target.tab,
+    SHEET_COLUMNS[target.tab],
     rootFolderId,
   );
 
-  await appendArchivePayload(
-    archiveId,
-    SHEET_TABS.income,
-    toArchive.map((row) => incomeRepo.toRow(row)),
-    years.map((year) => [year.year, year.total, now, year.rowCount]),
-  );
+  const already = await archivedIds(archiveId, target.tab);
+  const fresh = toArchive.filter((row) => !already.has(row.id));
+  if (fresh.length > 0) {
+    await appendArchivePayload(
+      archiveId,
+      target.tab,
+      fresh.map((row) => target.repo.toRow(row)),
+      yearSummaries(groupByYear(fresh)).map((year) => [
+        year.year,
+        year.total,
+        now,
+        year.rowCount,
+      ]),
+    );
+  }
 
-  await incomeRepo.replaceAll(spreadsheetId, [...keep, ...rollups]);
-  invalidateWorkspaceCache();
+  await target.repo.removeIdsAndAppend(
+    spreadsheetId,
+    new Set(toArchive.map((row) => row.id)),
+    rollups,
+  );
 
   return {
     kind,

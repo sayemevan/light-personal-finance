@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { todayISO as today } from "@/lib/recurring";
 
 import { createLoanSchema, type CreateLoanInput } from "@/lib/schemas";
 import { LOAN_TYPE_OPTIONS } from "@/lib/labels";
@@ -34,8 +35,6 @@ interface LoanFormDialogProps {
   onOpenChange: (open: boolean) => void;
   loan?: Loan;
 }
-
-const today = () => new Date().toISOString().slice(0, 10);
 
 export function LoanFormDialog({
   open,

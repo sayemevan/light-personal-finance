@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { todayISO as today } from "@/lib/recurring";
 
 import {
   createGoalContributionSchema,
@@ -37,12 +38,6 @@ interface GoalContributionFormDialogProps {
   goalId: string;
   mode: "add" | "withdraw";
 }
-
-const today = () => {
-  const now = new Date();
-  const offset = now.getTimezoneOffset() * 60_000;
-  return new Date(now.getTime() - offset).toISOString().slice(0, 10);
-};
 
 export function GoalContributionFormDialog({
   open,

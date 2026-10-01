@@ -1,7 +1,15 @@
 import "server-only";
 import type { z } from "zod";
-import { accountsRepo, categoriesRepo, recurringRepo } from "@/lib/repositories";
+import {
+  accountsRepo,
+  categoriesRepo,
+  expensesRepo,
+  incomeRepo,
+  recurringRepo,
+  transfersRepo,
+} from "@/lib/repositories";
 import { getSpreadsheetId } from "@/lib/google/workspace";
+import { withSpreadsheetLock } from "@/lib/google/lock";
 import { createExpense } from "@/lib/services/expense.service";
 import { createIncome } from "@/lib/services/income.service";
 import { createTransfer } from "@/lib/services/transfer.service";
@@ -44,22 +52,46 @@ export interface RunDueResult {
 // ---------------------------------------------------------------------------
 
 /**
- * Per-spreadsheet promise chain. Every operation that posts occurrences or
- * moves `nextDate` runs through it, so two concurrent requests in the same
- * server instance (e.g. two tabs opening at once) can never post the same
- * occurrence twice: the second waits, re-reads the rule and finds it handled.
+ * Every operation that posts occurrences or moves `nextDate` holds this lock,
+ * which works across server instances (see `@/lib/google/lock`). Two tabs or
+ * devices running at once can't post the same occurrence twice: the second
+ * waits, re-reads the rule and finds it handled.
  */
-const locks = new Map<string, Promise<unknown>>();
+function withLock<T>(spreadsheetId: string, fn: () => Promise<T>): Promise<T> {
+  return withSpreadsheetLock(spreadsheetId, "recurring", fn, {
+    ttlMs: 2 * 60_000,
+  });
+}
 
-async function withLock<T>(spreadsheetId: string, fn: () => Promise<T>): Promise<T> {
-  const previous = locks.get(spreadsheetId) ?? Promise.resolve();
-  const run = previous.catch(() => undefined).then(fn);
-  locks.set(spreadsheetId, run);
-  try {
-    return await run;
-  } finally {
-    if (locks.get(spreadsheetId) === run) locks.delete(spreadsheetId);
+/**
+ * Id of the transaction an occurrence creates. Deterministic, so if posting
+ * succeeded but advancing `nextDate` failed, the retry sees it already exists
+ * instead of posting it again.
+ */
+export function occurrenceId(ruleId: string, occurrence: string): string {
+  return `rec_${ruleId}_${occurrence}`;
+}
+
+/** Ids already in each transaction tab, loaded at most once per operation. */
+type PostedIds = Map<RecurringKind, Promise<Set<string>>>;
+
+function postedIds(
+  spreadsheetId: string,
+  kind: RecurringKind,
+  cache: PostedIds,
+): Promise<Set<string>> {
+  let ids = cache.get(kind);
+  if (!ids) {
+    const toIds = (rows: { id: string }[]) => new Set(rows.map((row) => row.id));
+    ids =
+      kind === "expense"
+        ? expensesRepo.list(spreadsheetId).then(toIds)
+        : kind === "income"
+          ? incomeRepo.list(spreadsheetId).then(toIds)
+          : transfersRepo.list(spreadsheetId).then(toIds);
+    cache.set(kind, ids);
   }
+  return ids;
 }
 
 // ---------------------------------------------------------------------------
@@ -246,12 +278,26 @@ export async function deleteRecurring(id: string): Promise<void> {
 // Posting
 // ---------------------------------------------------------------------------
 
-/** Create the expense / income / transfer for one occurrence of a rule. */
+/**
+ * Create the expense / income / transfer for one occurrence of a rule, dated
+ * `date`. Does nothing if that occurrence was already posted.
+ */
 export async function postOccurrence(
+  spreadsheetId: string,
   rule: RecurringRule,
-  date: string,
-  amount: number = rule.amount,
+  occurrence: string,
+  options: { date?: string; amount?: number; posted?: PostedIds } = {},
 ): Promise<void> {
+  const id = occurrenceId(rule.id, occurrence);
+  const posted = await postedIds(
+    spreadsheetId,
+    rule.kind,
+    options.posted ?? new Map(),
+  );
+  if (posted.has(id)) return;
+
+  const date = options.date ?? occurrence;
+  const amount = options.amount ?? rule.amount;
   const notes = [`${rule.name} (recurring)`, rule.notes]
     .filter(Boolean)
     .join(" — ")
@@ -260,36 +306,65 @@ export async function postOccurrence(
   switch (rule.kind) {
     case "expense":
       if (!rule.categoryId) throw AppError.validation("Select a category.");
-      await createExpense({
-        date,
-        amount,
-        categoryId: rule.categoryId,
-        accountId: rule.accountId,
-        paymentMethod: rule.paymentMethod ?? "cash",
-        notes,
-      });
+      await createExpense(
+        {
+          date,
+          amount,
+          categoryId: rule.categoryId,
+          accountId: rule.accountId,
+          paymentMethod: rule.paymentMethod ?? "cash",
+          notes,
+        },
+        { id },
+      );
       return;
     case "income":
       if (!rule.categoryId) throw AppError.validation("Select a category.");
-      await createIncome({
-        date,
-        amount,
-        categoryId: rule.categoryId,
-        accountId: rule.accountId,
-        notes,
-      });
+      await createIncome(
+        {
+          date,
+          amount,
+          categoryId: rule.categoryId,
+          accountId: rule.accountId,
+          notes,
+        },
+        { id },
+      );
       return;
     case "transfer":
       if (!rule.toAccountId) throw AppError.validation("Select an account.");
-      await createTransfer({
-        date,
-        amount,
-        fromAccountId: rule.accountId,
-        toAccountId: rule.toAccountId,
-        notes,
-      });
+      await createTransfer(
+        {
+          date,
+          amount,
+          fromAccountId: rule.accountId,
+          toAccountId: rule.toAccountId,
+          notes,
+        },
+        { id },
+      );
       return;
   }
+}
+
+/** Earliest due occurrence of each active confirm-first rule. */
+function pendingOccurrences(rules: RecurringRule[], today: string): PendingOccurrence[] {
+  const pending: PendingOccurrence[] = [];
+  for (const rule of rules) {
+    if (!rule.isActive || !rule.nextDate || rule.autoPost) continue;
+    if (!withinEnd(rule, rule.nextDate)) continue;
+    const earliest = occurrencesDue(rule, today, 1)[0];
+    if (earliest) {
+      pending.push({
+        ruleId: rule.id,
+        name: rule.name,
+        kind: rule.kind,
+        amount: rule.amount,
+        date: earliest,
+      });
+    }
+  }
+  return pending.sort((a, b) => a.date.localeCompare(b.date));
 }
 
 /**
@@ -300,8 +375,24 @@ export async function postOccurrence(
  */
 export async function runDueRules(today: string): Promise<RunDueResult> {
   const spreadsheetId = await getSpreadsheetId();
+
+  // This runs on every app open; only take the lock when something has to be
+  // written, otherwise just report what's waiting for confirmation.
+  const snapshot = await recurringRepo.list(spreadsheetId);
+  const needsWrite = snapshot.some(
+    (rule) =>
+      rule.isActive &&
+      rule.nextDate &&
+      (!withinEnd(rule, rule.nextDate) ||
+        (rule.autoPost && occurrencesDue(rule, today, 1).length > 0)),
+  );
+  if (!needsWrite) {
+    return { posted: 0, pending: pendingOccurrences(snapshot, today) };
+  }
+
   return withLock(spreadsheetId, async () => {
     const rules = await recurringRepo.list(spreadsheetId);
+    const postedCache: PostedIds = new Map();
     let posted = 0;
     const pending: PendingOccurrence[] = [];
 
@@ -333,7 +424,7 @@ export async function runDueRules(today: string): Promise<RunDueResult> {
       let lastPosted: string | undefined;
       try {
         for (const date of due) {
-          await postOccurrence(rule, date);
+          await postOccurrence(spreadsheetId, rule, date, { posted: postedCache });
           lastPosted = date;
           posted += 1;
         }
@@ -375,8 +466,10 @@ export async function confirmOccurrence(
     if (!withinEnd(rule, rule.nextDate)) {
       throw AppError.validation("This schedule has already ended.");
     }
-    const postDate = input.date > today ? today : input.date;
-    await postOccurrence(rule, postDate, input.amount ?? rule.amount);
+    await postOccurrence(spreadsheetId, rule, input.date, {
+      date: input.date > today ? today : input.date,
+      amount: input.amount ?? rule.amount,
+    });
     return recurringRepo.update(spreadsheetId, ruleId, advancedPatch(rule, rule.nextDate));
   });
 }

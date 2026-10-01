@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { todayISO as today } from "@/lib/recurring";
 
 import {
   createInvestmentSchema,
@@ -39,9 +40,7 @@ interface InvestmentFormDialogProps {
   investment?: Investment;
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
-
-const emptyValues: CreateInvestmentInput = {
+const emptyValues = (): CreateInvestmentInput => ({
   name: "",
   type: "stocks",
   purchaseDate: today(),
@@ -49,7 +48,7 @@ const emptyValues: CreateInvestmentInput = {
   currentValue: undefined as unknown as number,
   accountId: "",
   notes: "",
-};
+});
 
 export function InvestmentFormDialog({
   open,
@@ -63,7 +62,7 @@ export function InvestmentFormDialog({
 
   const form = useForm<CreateInvestmentInput>({
     resolver: zodResolver(createInvestmentSchema),
-    defaultValues: emptyValues,
+    defaultValues: emptyValues(),
   });
 
   React.useEffect(() => {
@@ -79,7 +78,7 @@ export function InvestmentFormDialog({
             accountId: investment.accountId ?? "",
             notes: investment.notes ?? "",
           }
-        : emptyValues,
+        : emptyValues(),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, investment]);

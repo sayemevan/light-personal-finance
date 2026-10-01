@@ -4,6 +4,7 @@ import * as React from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowDown } from "lucide-react";
+import { todayISO as today } from "@/lib/recurring";
 
 import { createTransferSchema, type CreateTransferInput } from "@/lib/schemas";
 import { useLookups } from "@/hooks/use-lookups";
@@ -35,8 +36,6 @@ interface TransferFormDialogProps {
   /** Pre-select the source account (e.g. from an account's menu). */
   defaultFromAccountId?: string;
 }
-
-const today = () => new Date().toISOString().slice(0, 10);
 
 export function TransferFormDialog({
   open,

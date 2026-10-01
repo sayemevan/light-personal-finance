@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { todayISO as today } from "@/lib/recurring";
 
 import {
   createExpenseWithSplitSchema,
@@ -58,8 +59,6 @@ interface ExpenseFormDialogProps {
 }
 
 type FormValues = CreateExpenseWithSplitInput;
-
-const today = () => new Date().toISOString().slice(0, 10);
 
 function blankValues(): FormValues {
   const memory = readEntryMemory("expense");
@@ -153,9 +152,11 @@ export function ExpenseFormDialog({
     try {
       const { fileId } = await uploadReceiptFile(file);
       form.setValue("receiptFileId", fileId, { shouldDirty: true });
-    } catch {
-      // Errors surface via the upload helper's thrown message; keep the form
-      // usable so the expense can still be saved without a receipt.
+    } catch (error) {
+      // Keep the form usable so the expense can still be saved without one.
+      toast.error(
+        error instanceof Error ? error.message : "Receipt upload failed.",
+      );
     } finally {
       setUploading(false);
     }
@@ -417,7 +418,10 @@ export function ExpenseFormDialog({
                         className="h-9 w-9"
                         aria-label="Remove receipt"
                         onClick={() =>
-                          form.setValue("receiptFileId", undefined)
+                          // "" (not undefined) so the PATCH clears the stored id.
+                          form.setValue("receiptFileId", "", {
+                            shouldDirty: true,
+                          })
                         }
                       >
                         <X className="h-4 w-4" aria-hidden="true" />

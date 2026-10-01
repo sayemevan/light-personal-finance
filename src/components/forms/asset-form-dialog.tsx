@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { todayISO as today } from "@/lib/recurring";
 
 import { createAssetSchema, type CreateAssetInput } from "@/lib/schemas";
 import { ASSET_CATEGORY_OPTIONS } from "@/lib/labels";
@@ -33,9 +34,7 @@ interface AssetFormDialogProps {
   asset?: Asset;
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
-
-const emptyValues: CreateAssetInput = {
+const emptyValues = (): CreateAssetInput => ({
   name: "",
   category: "house",
   purchaseDate: today(),
@@ -43,7 +42,7 @@ const emptyValues: CreateAssetInput = {
   currentValue: undefined as unknown as number,
   accountId: "",
   notes: "",
-};
+});
 
 export function AssetFormDialog({
   open,
@@ -57,7 +56,7 @@ export function AssetFormDialog({
 
   const form = useForm<CreateAssetInput>({
     resolver: zodResolver(createAssetSchema),
-    defaultValues: emptyValues,
+    defaultValues: emptyValues(),
   });
 
   React.useEffect(() => {
@@ -73,7 +72,7 @@ export function AssetFormDialog({
             accountId: asset.accountId ?? "",
             notes: asset.notes ?? "",
           }
-        : emptyValues,
+        : emptyValues(),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, asset]);

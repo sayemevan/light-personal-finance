@@ -121,7 +121,17 @@ export async function uploadReceiptFile(
   const form = new FormData();
   form.append("file", file);
   const res = await fetch("/api/receipts", { method: "POST", body: form });
-  const json = (await res.json()) as ApiResponse<{ fileId: string }>;
+  let json: ApiResponse<{ fileId: string }>;
+  try {
+    json = (await res.json()) as ApiResponse<{ fileId: string }>;
+  } catch {
+    // e.g. a 413 from the host before the route runs.
+    throw new Error(
+      res.status === 413
+        ? "Receipt is too large to upload."
+        : `Receipt upload failed (${res.status}).`,
+    );
+  }
   if (!json.ok) {
     throw new ApiClientError(json.error);
   }

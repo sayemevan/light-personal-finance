@@ -1,5 +1,6 @@
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { todayISO as localTodayISO } from "@/lib/recurring";
 import type { Goal } from "@/types/domain";
 
 /** Share of the target saved so far, 0..1. */
@@ -17,7 +18,7 @@ export type GoalPace =
 /** Where a goal stands against its target and date. */
 export function goalPace(
   goal: Goal,
-  todayISO: string = new Date().toISOString().slice(0, 10),
+  todayISO: string = localTodayISO(),
 ): GoalPace {
   if ((goal.savedAmount ?? 0) >= goal.targetAmount) return { kind: "reached" };
   if (!goal.targetDate) return { kind: "open" };

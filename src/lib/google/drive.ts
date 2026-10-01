@@ -29,6 +29,8 @@ export async function findFolder(
     q: query,
     fields: "files(id, name)",
     spaces: "drive",
+    // Oldest first, so any duplicates always resolve to the same original.
+    orderBy: "createdTime",
     pageSize: 1,
   });
   return res.data.files?.[0]?.id ?? null;
@@ -69,6 +71,8 @@ export async function findSpreadsheet(
     ].join(" and "),
     fields: "files(id, name)",
     spaces: "drive",
+    // Oldest first, so any duplicates always resolve to the same original.
+    orderBy: "createdTime",
     pageSize: 1,
   });
   return res.data.files?.[0]?.id ?? null;

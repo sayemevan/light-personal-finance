@@ -42,11 +42,24 @@ export function formatNumber(
   return new Intl.NumberFormat(locale).format(value);
 }
 
+/**
+ * Parse a stored date. Bare calendar dates ("YYYY-MM-DD", "YYYY-MM") are read
+ * as local midnight; `new Date("YYYY-MM-DD")` would read UTC midnight and show
+ * the previous day west of UTC.
+ */
+function parseCalendarDate(value: string): Date {
+  const match = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(value);
+  if (match) {
+    return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3] ?? 1));
+  }
+  return new Date(value);
+}
+
 export function formatDate(
   value: string | Date,
   locale: string = DEFAULT_LOCALE,
 ): string {
-  const date = typeof value === "string" ? new Date(value) : value;
+  const date = typeof value === "string" ? parseCalendarDate(value) : value;
   if (Number.isNaN(date.getTime())) return "—";
   return new Intl.DateTimeFormat(locale, {
     year: "numeric",
@@ -59,7 +72,7 @@ export function formatMonth(
   value: string | Date,
   locale: string = DEFAULT_LOCALE,
 ): string {
-  const date = typeof value === "string" ? new Date(value) : value;
+  const date = typeof value === "string" ? parseCalendarDate(value) : value;
   if (Number.isNaN(date.getTime())) return "—";
   return new Intl.DateTimeFormat(locale, {
     year: "numeric",

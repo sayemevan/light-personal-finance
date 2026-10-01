@@ -31,6 +31,7 @@ export interface FinanceWorkspace {
 // Warm-instance cache so we don't re-scan Drive on every request.
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const workspaceCache = new Map<string, { value: FinanceWorkspace; ts: number }>();
+const inflight = new Map<string, Promise<FinanceWorkspace>>();
 
 /**
  * Idempotently ensure the Drive folder structure and Finance spreadsheet exist,
@@ -155,9 +156,20 @@ export async function getWorkspaceForCurrentUser(): Promise<FinanceWorkspace> {
     return cached.value;
   }
 
-  const workspace = await ensureFinanceWorkspace();
-  workspaceCache.set(userKey, { value: workspace, ts: Date.now() });
-  return workspace;
+  // Share one find-or-create per user: the dashboard fires many requests at
+  // once, and on a fresh account each would otherwise create its own folder
+  // and spreadsheet.
+  let pending = inflight.get(userKey);
+  if (!pending) {
+    pending = ensureFinanceWorkspace()
+      .then((workspace) => {
+        workspaceCache.set(userKey, { value: workspace, ts: Date.now() });
+        return workspace;
+      })
+      .finally(() => inflight.delete(userKey));
+    inflight.set(userKey, pending);
+  }
+  return pending;
 }
 
 /** Convenience accessor returning just the spreadsheet id. */

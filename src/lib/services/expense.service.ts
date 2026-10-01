@@ -95,11 +95,12 @@ export async function getExpense(id: string): Promise<Expense> {
 
 export async function createExpense(
   input: CreateExpenseInput,
+  options: { id?: string } = {},
 ): Promise<Expense> {
   const { spreadsheetId } = await getWorkspaceForCurrentUser();
   const now = new Date().toISOString();
   const expense: Expense = {
-    id: generateId(),
+    id: options.id ?? generateId(),
     date: input.date,
     amount: input.amount,
     categoryId: input.categoryId,

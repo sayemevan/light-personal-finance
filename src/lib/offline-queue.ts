@@ -203,9 +203,21 @@ async function runFlush(): Promise<FlushResult> {
         method: item.method,
         headers: { "Content-Type": "application/json" },
         body,
+        // A redirect means the request never reached the API (e.g. sent to
+        // sign-in); following it would make an HTML page look like success.
+        redirect: "manual",
       });
     } catch {
       // Still offline / unreachable: keep this and every later item.
+      break;
+    }
+
+    const isJson = (res.headers.get("content-type") ?? "").includes(
+      "application/json",
+    );
+    if (res.type === "opaqueredirect" || (res.ok && !isJson)) {
+      // Treat like an expired session: retry later, keep order.
+      updated.set(item.tempId, { ...item, path, body });
       break;
     }
 
