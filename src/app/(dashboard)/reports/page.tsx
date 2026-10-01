@@ -44,6 +44,11 @@ import {
   ALL_VALUE,
   FilterSelect,
 } from "@/components/shared/filter-select";
+import { OverviewTab } from "@/components/reports/overview-tab";
+import { CashFlowTab } from "@/components/reports/cash-flow-tab";
+import { TagsTab } from "@/components/reports/tags-tab";
+import { ExportMenu } from "@/components/reports/export-menu";
+import "@/app/print.css";
 
 const CURRENT_YEAR = String(new Date().getFullYear());
 
@@ -63,15 +68,41 @@ export default function ReportsPage() {
   const asset = useAssetSummary();
   const currency = useCurrency();
 
+  const yearFilterRow = (
+    <div className="flex justify-end" data-print-hide>
+      <FilterSelect
+        value={yearFilter}
+        onChange={setYearFilter}
+        options={yearOptions}
+        allLabel={`${CURRENT_YEAR} (Live)`}
+        placeholder="Year"
+      />
+    </div>
+  );
+
   return (
     <>
       <PageHeader
         title="Reports"
         description="Summaries and insights across your finances."
+        actions={<ExportMenu year={selectedYear} />}
       />
 
-      <Tabs defaultValue="monthly">
-        <TabsList className="no-scrollbar h-auto w-full justify-start gap-1 overflow-x-auto sm:w-auto sm:flex-wrap [&>*]:shrink-0">
+      <div className="hidden print:block">
+        <h1 className="text-xl font-semibold">Reports · {selectedYear}</h1>
+        <p className="text-xs text-muted-foreground" suppressHydrationWarning>
+          Printed {new Date().toLocaleDateString("en-US", { dateStyle: "medium" })}
+        </p>
+      </div>
+
+      <Tabs defaultValue="overview">
+        <TabsList
+          data-print-hide
+          className="no-scrollbar h-auto w-full justify-start gap-1 overflow-x-auto sm:w-auto sm:flex-wrap [&>*]:shrink-0"
+        >
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="cash-flow">Cash flow</TabsTrigger>
+          <TabsTrigger value="tags">Tags</TabsTrigger>
           <TabsTrigger value="monthly">Monthly & Yearly</TabsTrigger>
           <TabsTrigger value="category">Category</TabsTrigger>
           <TabsTrigger value="account">Account</TabsTrigger>
@@ -80,23 +111,30 @@ export default function ReportsPage() {
           <TabsTrigger value="asset">Assets</TabsTrigger>
         </TabsList>
 
+        <TabsContent value="overview" className="space-y-4 md:space-y-6">
+          {yearFilterRow}
+          <OverviewTab year={selectedYear} currency={currency} />
+        </TabsContent>
+
+        <TabsContent value="cash-flow" className="space-y-4 md:space-y-6">
+          {yearFilterRow}
+          <CashFlowTab year={selectedYear} currency={currency} />
+        </TabsContent>
+
+        <TabsContent value="tags" className="space-y-4 md:space-y-6">
+          {yearFilterRow}
+          <TagsTab year={selectedYear} currency={currency} />
+        </TabsContent>
+
         <TabsContent value="monthly" className="space-y-6">
-          <div className="flex justify-end">
-            <FilterSelect
-              value={yearFilter}
-              onChange={setYearFilter}
-              options={yearOptions}
-              allLabel={`${CURRENT_YEAR} (Live)`}
-              placeholder="Year"
-            />
-          </div>
+          {yearFilterRow}
           <QueryView query={monthly}>
             {(points) => {
               const yearIncome = points.reduce((s, p) => s + p.income, 0);
               const yearExpense = points.reduce((s, p) => s + p.expense, 0);
               return (
                 <>
-                  <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                     <StatCard
                       title="Yearly income"
                       value={formatCurrency(yearIncome, currency)}
@@ -130,21 +168,13 @@ export default function ReportsPage() {
         </TabsContent>
 
         <TabsContent value="category" className="space-y-6">
-          <div className="flex justify-end">
-            <FilterSelect
-              value={yearFilter}
-              onChange={setYearFilter}
-              options={yearOptions}
-              allLabel={`${CURRENT_YEAR} (Live)`}
-              placeholder="Year"
-            />
-          </div>
+          {yearFilterRow}
           <QueryView query={category}>
             {(rows) =>
               rows.length === 0 ? (
                 <EmptyReport />
               ) : (
-                <div className="grid gap-6 lg:grid-cols-2">
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                   <Card>
                     <CardHeader>
                       <CardTitle>Spending by category</CardTitle>
@@ -195,7 +225,7 @@ export default function ReportsPage() {
         <TabsContent value="loan" className="space-y-6">
           <QueryView query={loan}>
             {(summary) => (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <StatCard
                   title="Total borrowed"
                   value={formatCurrency(summary.totalBorrowed, currency)}
@@ -224,7 +254,7 @@ export default function ReportsPage() {
                 <EmptyReport />
               ) : (
                 <>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <StatCard
                       title="Total invested"
                       value={formatCurrency(summary.totalInvested, currency)}
@@ -242,7 +272,7 @@ export default function ReportsPage() {
                       value={formatPercent(summary.returnPct)}
                     />
                   </div>
-                  <div className="grid gap-6 lg:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                     <Card>
                       <CardHeader>
                         <CardTitle>Value by type</CardTitle>
@@ -285,7 +315,7 @@ export default function ReportsPage() {
                 <EmptyReport />
               ) : (
                 <>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <StatCard
                       title="Total purchase value"
                       value={formatCurrency(summary.totalPurchase, currency)}
@@ -303,7 +333,7 @@ export default function ReportsPage() {
                       value={formatPercent(summary.returnPct)}
                     />
                   </div>
-                  <div className="grid gap-6 lg:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                     <Card>
                       <CardHeader>
                         <CardTitle>Value by category</CardTitle>

@@ -8,7 +8,10 @@ import type {
   AssetCategory,
   Category,
   CategoryKind,
+  Budget,
   Expense,
+  Goal,
+  GoalContribution,
   Income,
   Investment,
   InvestmentTransaction,
@@ -20,7 +23,24 @@ import type {
   LoanStatus,
   LoanType,
   PaymentMethod,
+  RecurringFrequency,
+  RecurringKind,
+  RecurringRule,
+  Transfer,
 } from "@/types/domain";
+
+/** Tags are stored as one comma-separated cell. */
+function encodeTags(tags: string[] | undefined): string {
+  return (tags ?? []).join(", ");
+}
+
+function decodeTags(value: string | undefined): string[] | undefined {
+  const tags = (value ?? "")
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+  return tags.length > 0 ? tags : undefined;
+}
 
 /**
  * Codecs + repository instances for every worksheet, declared once and shared
@@ -80,6 +100,7 @@ const expenseCodec: RowCodec<Expense> = {
     e.receiptFileId ?? "",
     e.createdAt,
     e.updatedAt,
+    encodeTags(e.tags),
   ],
   fromRow: (r) => ({
     id: cell.str(r[0]),
@@ -93,6 +114,7 @@ const expenseCodec: RowCodec<Expense> = {
     receiptFileId: cell.optional(r[8]),
     createdAt: cell.str(r[9]),
     updatedAt: cell.str(r[10]),
+    tags: decodeTags(r[11]),
   }),
 };
 
@@ -106,6 +128,7 @@ const incomeCodec: RowCodec<Income> = {
     i.notes ?? "",
     i.createdAt,
     i.updatedAt,
+    encodeTags(i.tags),
   ],
   fromRow: (r) => ({
     id: cell.str(r[0]),
@@ -116,6 +139,7 @@ const incomeCodec: RowCodec<Income> = {
     notes: cell.optional(r[5]),
     createdAt: cell.str(r[6]),
     updatedAt: cell.str(r[7]),
+    tags: decodeTags(r[8]),
   }),
 };
 
@@ -244,6 +268,111 @@ const assetCodec: RowCodec<Asset> = {
   }),
 };
 
+const transferCodec: RowCodec<Transfer> = {
+  toRow: (t) => [
+    t.id,
+    t.date,
+    t.amount,
+    t.fromAccountId,
+    t.toAccountId,
+    t.notes ?? "",
+    t.createdAt,
+  ],
+  fromRow: (r) => ({
+    id: cell.str(r[0]),
+    date: cell.str(r[1]),
+    amount: cell.num(r[2]),
+    fromAccountId: cell.str(r[3]),
+    toAccountId: cell.str(r[4]),
+    notes: cell.optional(r[5]),
+    createdAt: cell.str(r[6]),
+  }),
+};
+
+const budgetCodec: RowCodec<Budget> = {
+  toRow: (b) => [b.id, b.categoryId, b.amount, b.createdAt],
+  fromRow: (r) => ({
+    id: cell.str(r[0]),
+    categoryId: cell.str(r[1]),
+    amount: cell.num(r[2]),
+    createdAt: cell.str(r[3]),
+  }),
+};
+
+const goalCodec: RowCodec<Goal> = {
+  toRow: (g) => [
+    g.id,
+    g.name,
+    g.targetAmount,
+    g.targetDate ?? "",
+    g.accountId ?? "",
+    g.isArchived ? "TRUE" : "FALSE",
+    g.createdAt,
+  ],
+  fromRow: (r) => ({
+    id: cell.str(r[0]),
+    name: cell.str(r[1]),
+    targetAmount: cell.num(r[2]),
+    targetDate: cell.optional(r[3]),
+    accountId: cell.optional(r[4]),
+    isArchived: cell.bool(r[5]),
+    createdAt: cell.str(r[6]),
+  }),
+};
+
+const goalContributionCodec: RowCodec<GoalContribution> = {
+  toRow: (c) => [c.id, c.goalId, c.date, c.amount, c.notes ?? "", c.createdAt],
+  fromRow: (r) => ({
+    id: cell.str(r[0]),
+    goalId: cell.str(r[1]),
+    date: cell.str(r[2]),
+    amount: cell.num(r[3]),
+    notes: cell.optional(r[4]),
+    createdAt: cell.str(r[5]),
+  }),
+};
+
+const recurringCodec: RowCodec<RecurringRule> = {
+  toRow: (x) => [
+    x.id,
+    x.kind,
+    x.name,
+    x.amount,
+    x.categoryId ?? "",
+    x.accountId,
+    x.toAccountId ?? "",
+    x.paymentMethod ?? "",
+    x.frequency,
+    x.interval,
+    x.startDate,
+    x.endDate ?? "",
+    x.nextDate,
+    x.autoPost ? "TRUE" : "FALSE",
+    x.isActive ? "TRUE" : "FALSE",
+    x.notes ?? "",
+    x.createdAt,
+  ],
+  fromRow: (r) => ({
+    id: cell.str(r[0]),
+    kind: (cell.str(r[1]) || "expense") as RecurringKind,
+    name: cell.str(r[2]),
+    amount: cell.num(r[3]),
+    categoryId: cell.optional(r[4]),
+    accountId: cell.str(r[5]),
+    toAccountId: cell.optional(r[6]),
+    paymentMethod: cell.optional(r[7]) as PaymentMethod | undefined,
+    frequency: (cell.str(r[8]) || "monthly") as RecurringFrequency,
+    interval: Math.max(1, Math.round(cell.num(r[9])) || 1),
+    startDate: cell.str(r[10]),
+    endDate: cell.optional(r[11]),
+    nextDate: cell.str(r[12]),
+    autoPost: cell.bool(r[13]),
+    isActive: cell.bool(r[14]),
+    notes: cell.optional(r[15]),
+    createdAt: cell.str(r[16]),
+  }),
+};
+
 export const accountsRepo = new SheetRepository<Account>(
   SHEET_TABS.accounts,
   SHEET_COLUMNS[SHEET_TABS.accounts].length,
@@ -297,4 +426,34 @@ export const assetsRepo = new SheetRepository<Asset>(
   SHEET_TABS.assets,
   SHEET_COLUMNS[SHEET_TABS.assets].length,
   assetCodec,
+);
+
+export const transfersRepo = new SheetRepository<Transfer>(
+  SHEET_TABS.transfers,
+  SHEET_COLUMNS[SHEET_TABS.transfers].length,
+  transferCodec,
+);
+
+export const budgetsRepo = new SheetRepository<Budget>(
+  SHEET_TABS.budgets,
+  SHEET_COLUMNS[SHEET_TABS.budgets].length,
+  budgetCodec,
+);
+
+export const goalsRepo = new SheetRepository<Goal>(
+  SHEET_TABS.goals,
+  SHEET_COLUMNS[SHEET_TABS.goals].length,
+  goalCodec,
+);
+
+export const goalContributionsRepo = new SheetRepository<GoalContribution>(
+  SHEET_TABS.goalContributions,
+  SHEET_COLUMNS[SHEET_TABS.goalContributions].length,
+  goalContributionCodec,
+);
+
+export const recurringRepo = new SheetRepository<RecurringRule>(
+  SHEET_TABS.recurring,
+  SHEET_COLUMNS[SHEET_TABS.recurring].length,
+  recurringCodec,
 );

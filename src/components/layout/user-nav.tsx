@@ -4,6 +4,8 @@ import Link from "next/link";
 import { signOut } from "next-auth/react";
 import { LogOut, User as UserIcon } from "lucide-react";
 
+import { clearOfflineData } from "@/lib/pwa";
+
 import {
   Avatar,
   AvatarFallback,
@@ -70,7 +72,11 @@ export function UserNav({ name, email, image }: UserNavProps) {
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="text-destructive focus:text-destructive"
-          onClick={() => void signOut({ callbackUrl: "/sign-in" })}
+          onClick={() =>
+            void clearOfflineData()
+              .catch(() => undefined)
+              .then(() => signOut({ callbackUrl: "/sign-in" }))
+          }
         >
           <LogOut className="h-4 w-4" />
           Sign out

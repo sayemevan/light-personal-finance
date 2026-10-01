@@ -8,6 +8,7 @@ export interface ListQueryParams {
   categoryId?: string;
   accountId?: string;
   year?: string;
+  tag?: string;
 }
 
 /** Serialise list params into a query string, omitting empty values. */
@@ -21,5 +22,6 @@ export function buildListQuery(params: ListQueryParams): string {
   if (params.categoryId) search.set("categoryId", params.categoryId);
   if (params.accountId) search.set("accountId", params.accountId);
   if (params.year) search.set("year", params.year);
+  if (params.tag) search.set("tag", params.tag);
   return search.toString();
 }

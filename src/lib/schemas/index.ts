@@ -14,6 +14,20 @@ const amount = z.coerce.number().finite().positive("Amount must be positive");
 
 const optionalText = z.string().trim().max(500).optional();
 
+/** Lower-case, "#"-less, de-duplicated tag list (max 10). */
+export const tagsSchema = z
+  .array(z.string())
+  .max(10)
+  .transform((tags) => [
+    ...new Set(
+      tags
+        .map((tag) => tag.trim().replace(/^#/, "").toLowerCase())
+        .filter(Boolean)
+        .map((tag) => tag.slice(0, 40)),
+    ),
+  ])
+  .optional();
+
 export const accountTypeSchema = z.enum([
   "cash",
   "bank",
@@ -64,8 +78,26 @@ export const createExpenseSchema = z.object({
   merchant: optionalText,
   notes: optionalText,
   receiptFileId: z.string().optional(),
+  tags: tagsSchema,
 });
 export const updateExpenseSchema = createExpenseSchema.partial();
+
+/**
+ * Creating an expense paid for others: the expense records only your share,
+ * and each other person's share becomes money lent to them (a "lent" loan from
+ * the same account), so the account still drops by the full bill.
+ */
+export const createExpenseWithSplitSchema = createExpenseSchema.extend({
+  splits: z
+    .array(
+      z.object({
+        person: z.string().trim().min(1).max(120),
+        amount,
+      }),
+    )
+    .max(20)
+    .optional(),
+});
 
 export const createIncomeSchema = z.object({
   date: isoDate,
@@ -73,8 +105,116 @@ export const createIncomeSchema = z.object({
   categoryId: z.string().min(1),
   accountId: z.string().min(1),
   notes: optionalText,
+  tags: tagsSchema,
 });
 export const updateIncomeSchema = createIncomeSchema.partial();
+
+export const createTransferSchema = z
+  .object({
+    date: isoDate,
+    amount,
+    fromAccountId: z.string().min(1, "Select an account"),
+    toAccountId: z.string().min(1, "Select an account"),
+    notes: optionalText,
+  })
+  .refine((value) => value.fromAccountId !== value.toAccountId, {
+    path: ["toAccountId"],
+    message: "Choose a different account",
+  });
+export const updateTransferSchema = z
+  .object({
+    date: isoDate,
+    amount,
+    fromAccountId: z.string().min(1),
+    toAccountId: z.string().min(1),
+    notes: optionalText,
+  })
+  .partial();
+
+export const createBudgetSchema = z.object({
+  /** Expense category id, or "__overall__" for a total monthly cap. */
+  categoryId: z.string().min(1, "Select a category"),
+  amount,
+});
+export const updateBudgetSchema = createBudgetSchema.partial();
+
+export const createGoalSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  targetAmount: amount,
+  targetDate: isoDate.optional(),
+  accountId: z.string().optional(),
+});
+export const updateGoalSchema = createGoalSchema
+  .partial()
+  .extend({ isArchived: z.boolean().optional() });
+
+export const createGoalContributionSchema = z.object({
+  goalId: z.string().min(1),
+  date: isoDate,
+  amount: z.coerce
+    .number()
+    .finite()
+    .refine((value) => value !== 0, "Amount cannot be zero"),
+  notes: optionalText,
+});
+
+export const recurringKindSchema = z.enum(["expense", "income", "transfer"]);
+export const recurringFrequencySchema = z.enum([
+  "daily",
+  "weekly",
+  "monthly",
+  "yearly",
+]);
+
+const recurringBase = z.object({
+  kind: recurringKindSchema,
+  name: z.string().trim().min(1).max(120),
+  amount,
+  categoryId: z.string().optional(),
+  accountId: z.string().min(1, "Select an account"),
+  toAccountId: z.string().optional(),
+  paymentMethod: paymentMethodSchema.optional(),
+  frequency: recurringFrequencySchema,
+  interval: z.coerce.number().int().min(1).max(365).default(1),
+  startDate: isoDate,
+  endDate: isoDate.optional(),
+  autoPost: z.boolean().default(false),
+  isActive: z.boolean().default(true),
+  notes: optionalText,
+});
+
+export const createRecurringSchema = recurringBase.superRefine((value, ctx) => {
+  if (value.kind !== "transfer" && !value.categoryId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["categoryId"],
+      message: "Select a category",
+    });
+  }
+  if (value.kind === "transfer") {
+    if (!value.toAccountId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["toAccountId"],
+        message: "Select an account",
+      });
+    } else if (value.toAccountId === value.accountId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["toAccountId"],
+        message: "Choose a different account",
+      });
+    }
+  }
+  if (value.endDate && value.endDate < value.startDate) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["endDate"],
+      message: "End date must be after the start date",
+    });
+  }
+});
+export const updateRecurringSchema = recurringBase.partial();
 
 export const createAccountSchema = z.object({
   name: z.string().trim().min(1).max(80),
@@ -103,7 +243,8 @@ export const createLoanSchema = z.object({
   principal: amount,
   interestRate: z.coerce.number().min(0).max(1000).optional(),
   borrowDate: isoDate,
-  dueDate: isoDate.optional(),
+  /** "" clears the due date on edit. */
+  dueDate: z.union([isoDate, z.literal("")]).optional(),
   status: loanStatusSchema.default("active"),
   notes: optionalText,
 });
@@ -204,14 +345,26 @@ export const archiveKindSchema = z.object({
 export const expenseListQuerySchema = paginationQuerySchema.extend({
   categoryId: z.string().optional(),
   accountId: z.string().optional(),
+  tag: z.string().trim().max(40).optional(),
 });
 
 export const incomeListQuerySchema = paginationQuerySchema.extend({
   categoryId: z.string().optional(),
   accountId: z.string().optional(),
+  tag: z.string().trim().max(40).optional(),
 });
 
 export type CreateExpenseInput = z.infer<typeof createExpenseSchema>;
+export type CreateExpenseWithSplitInput = z.input<
+  typeof createExpenseWithSplitSchema
+>;
+export type CreateTransferInput = z.infer<typeof createTransferSchema>;
+export type CreateBudgetInput = z.infer<typeof createBudgetSchema>;
+export type CreateGoalInput = z.infer<typeof createGoalSchema>;
+export type CreateGoalContributionInput = z.infer<
+  typeof createGoalContributionSchema
+>;
+export type CreateRecurringInput = z.input<typeof createRecurringSchema>;
 export type CreateIncomeInput = z.infer<typeof createIncomeSchema>;
 export type CreateAccountInput = z.infer<typeof createAccountSchema>;
 export type CreateCategoryInput = z.infer<typeof createCategorySchema>;

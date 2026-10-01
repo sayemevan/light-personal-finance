@@ -1,14 +1,6 @@
 import "server-only";
-import {
-  accountsRepo,
-  assetsRepo,
-  expensesRepo,
-  incomeRepo,
-  investmentsRepo,
-  investmentTransactionsRepo,
-  loansRepo,
-  loanPaymentsRepo,
-} from "@/lib/repositories";
+import { accountsRepo } from "@/lib/repositories";
+import { loadLedger } from "@/lib/services/ledger.service";
 import { getSpreadsheetId } from "@/lib/google/workspace";
 import { getSettings } from "@/lib/services/settings.service";
 import { computeAccountBalance } from "@/lib/finance";
@@ -18,38 +10,10 @@ import type { CreateAccountInput } from "@/lib/schemas";
 
 /** List accounts with their computed current balance. */
 export async function listAccounts(): Promise<Account[]> {
-  const spreadsheetId = await getSpreadsheetId();
-  const [
-    accounts,
-    expenses,
-    income,
-    investments,
-    assets,
-    loans,
-    payments,
-    investmentTransactions,
-  ] = await Promise.all([
-    accountsRepo.list(spreadsheetId),
-    expensesRepo.list(spreadsheetId),
-    incomeRepo.list(spreadsheetId),
-    investmentsRepo.list(spreadsheetId),
-    assetsRepo.list(spreadsheetId),
-    loansRepo.list(spreadsheetId),
-    loanPaymentsRepo.list(spreadsheetId),
-    investmentTransactionsRepo.list(spreadsheetId),
-  ]);
-  return accounts.map((account) => ({
+  const ledger = await loadLedger();
+  return ledger.accounts.map((account) => ({
     ...account,
-    currentBalance: computeAccountBalance(
-      account,
-      expenses,
-      income,
-      investments,
-      assets,
-      loans,
-      payments,
-      investmentTransactions,
-    ),
+    currentBalance: computeAccountBalance(account, ledger),
   }));
 }
 

@@ -47,6 +47,18 @@ function columnLetter(count: number): string {
   return letters;
 }
 
+// Bumped on every write so read caches (see ledger.service) can tell when a
+// spreadsheet changed underneath them within this server instance.
+const writeGeneration = new Map<string, number>();
+
+export function spreadsheetGeneration(spreadsheetId: string): number {
+  return writeGeneration.get(spreadsheetId) ?? 0;
+}
+
+function markWritten(spreadsheetId: string): void {
+  writeGeneration.set(spreadsheetId, spreadsheetGeneration(spreadsheetId) + 1);
+}
+
 // Cache the numeric sheetId per (spreadsheet, tab) — needed for row deletion.
 const sheetIdCache = new Map<string, number>();
 
@@ -96,8 +108,15 @@ export class SheetRepository<T extends { id: string }> {
   }
 
   /** A1 range covering all data rows (row 1 holds headers). */
-  private get dataRange(): string {
+  get dataRange(): string {
     return `${this.tab}!A2:${this.lastColumn}`;
+  }
+
+  /** Decode raw rows (as returned for `dataRange`) into entities. */
+  parse(rows: string[][]): T[] {
+    return rows
+      .filter((row) => row[0]?.trim())
+      .map((row) => this.codec.fromRow(row));
   }
 
   toRow(entity: T): Cell[] {
@@ -110,10 +129,7 @@ export class SheetRepository<T extends { id: string }> {
       spreadsheetId,
       range: this.dataRange,
     });
-    const rows = (res.data.values as string[][]) ?? [];
-    return rows
-      .filter((row) => row[0]?.trim())
-      .map((row) => this.codec.fromRow(row));
+    return this.parse((res.data.values as string[][]) ?? []);
   }
 
   async findById(spreadsheetId: string, id: string): Promise<T | null> {
@@ -128,6 +144,7 @@ export class SheetRepository<T extends { id: string }> {
 
   async appendMany(spreadsheetId: string, entities: T[]): Promise<void> {
     if (entities.length === 0) return;
+    markWritten(spreadsheetId);
     const sheets = await getSheetsClient();
     await sheets.spreadsheets.values.append({
       spreadsheetId,
@@ -136,6 +153,7 @@ export class SheetRepository<T extends { id: string }> {
       insertDataOption: "INSERT_ROWS",
       requestBody: { values: entities.map((entity) => this.codec.toRow(entity)) },
     });
+    markWritten(spreadsheetId);
   }
 
   /**
@@ -143,6 +161,7 @@ export class SheetRepository<T extends { id: string }> {
    * rows plus rollups are written only once the archive copy has succeeded.
    */
   async replaceAll(spreadsheetId: string, entities: T[]): Promise<void> {
+    markWritten(spreadsheetId);
     const sheets = await getSheetsClient();
     await sheets.spreadsheets.values.clear({
       spreadsheetId,
@@ -155,6 +174,7 @@ export class SheetRepository<T extends { id: string }> {
       valueInputOption: "USER_ENTERED",
       requestBody: { values: entities.map((entity) => this.codec.toRow(entity)) },
     });
+    markWritten(spreadsheetId);
   }
 
   async update(
@@ -173,6 +193,7 @@ export class SheetRepository<T extends { id: string }> {
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [this.codec.toRow(merged)] },
     });
+    markWritten(spreadsheetId);
     return merged;
   }
 
@@ -199,6 +220,7 @@ export class SheetRepository<T extends { id: string }> {
         ],
       },
     });
+    markWritten(spreadsheetId);
   }
 
   /** Locate a record and the 1-based sheet row it occupies. */

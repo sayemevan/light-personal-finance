@@ -7,6 +7,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { createIncomeSchema, type CreateIncomeInput } from "@/lib/schemas";
 import { useLookups } from "@/hooks/use-lookups";
 import { useCreateIncome, useUpdateIncome } from "@/hooks/use-income";
+import { useEntrySuggestions } from "@/hooks/use-expenses";
+import { readEntryMemory, writeEntryMemory } from "@/lib/entry-memory";
 import type { Income } from "@/types/domain";
 import { Form } from "@/components/ui/form";
 import { Button } from "@/components/ui/button";
@@ -22,6 +24,7 @@ import {
   DateField,
   NumberField,
   SelectField,
+  TagsField,
   TextareaField,
 } from "@/components/forms/fields";
 
@@ -33,6 +36,18 @@ interface IncomeFormDialogProps {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+function blankValues(): CreateIncomeInput {
+  const memory = readEntryMemory("income");
+  return {
+    date: today(),
+    amount: undefined as unknown as number,
+    categoryId: memory.categoryId ?? "",
+    accountId: memory.accountId ?? "",
+    notes: "",
+    tags: [],
+  };
+}
+
 export function IncomeFormDialog({
   open,
   onOpenChange,
@@ -42,16 +57,11 @@ export function IncomeFormDialog({
   const { accountOptions, categoryOptions } = useLookups();
   const createIncome = useCreateIncome();
   const updateIncome = useUpdateIncome();
+  const suggestions = useEntrySuggestions(open);
 
   const form = useForm<CreateIncomeInput>({
     resolver: zodResolver(createIncomeSchema),
-    defaultValues: {
-      date: today(),
-      amount: undefined,
-      categoryId: "",
-      accountId: "",
-      notes: "",
-    },
+    defaultValues: blankValues(),
   });
 
   React.useEffect(() => {
@@ -64,14 +74,9 @@ export function IncomeFormDialog({
             categoryId: income.categoryId,
             accountId: income.accountId,
             notes: income.notes ?? "",
+            tags: income.tags ?? [],
           }
-        : {
-            date: today(),
-            amount: undefined,
-            categoryId: "",
-            accountId: "",
-            notes: "",
-          },
+        : blankValues(),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, income]);
@@ -81,6 +86,10 @@ export function IncomeFormDialog({
     if (isEdit && income) {
       updateIncome.mutate({ id: income.id, input: values }, { onSuccess: done });
     } else {
+      writeEntryMemory("income", {
+        accountId: values.accountId,
+        categoryId: values.categoryId,
+      });
       createIncome.mutate(values, { onSuccess: done });
     }
   };
@@ -97,16 +106,15 @@ export function IncomeFormDialog({
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <DateField control={form.control} name="date" label="Date" />
-              <NumberField
-                control={form.control}
-                name="amount"
-                label="Amount"
-                placeholder="0.00"
-              />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <NumberField
+              control={form.control}
+              name="amount"
+              label="Amount"
+              placeholder="0.00"
+              autoFocus={!isEdit}
+              className="h-14 text-2xl font-semibold sm:h-11 sm:text-xl"
+            />
+            <div className="grid grid-cols-2 gap-3 sm:gap-4">
               <SelectField
                 control={form.control}
                 name="categoryId"
@@ -117,11 +125,18 @@ export function IncomeFormDialog({
               <SelectField
                 control={form.control}
                 name="accountId"
-                label="Account"
-                placeholder="Select account"
+                label="Received in"
+                placeholder="Account"
                 options={accountOptions}
               />
             </div>
+            <DateField control={form.control} name="date" label="Date" />
+            <TagsField
+              control={form.control}
+              name="tags"
+              label="Tags (optional)"
+              suggestions={suggestions.data?.tags}
+            />
             <TextareaField
               control={form.control}
               name="notes"

@@ -107,7 +107,7 @@ export function AssetFormDialog({
               label="Name"
               placeholder="e.g. Family home, Toyota Corolla"
             />
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <SelectField
                 control={form.control}
                 name="category"
@@ -120,7 +120,7 @@ export function AssetFormDialog({
                 label="Purchase date"
               />
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <NumberField
                 control={form.control}
                 name="purchaseValue"

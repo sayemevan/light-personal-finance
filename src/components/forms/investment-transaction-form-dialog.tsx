@@ -34,6 +34,8 @@ interface InvestmentTransactionFormDialogProps {
   investmentId: string;
   direction: InvestmentTransactionDirection;
   defaultAccountId?: string;
+  /** Current value of the holding; a loss can't exceed it. */
+  currentValue?: number;
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -44,6 +46,7 @@ export function InvestmentTransactionFormDialog({
   investmentId,
   direction,
   defaultAccountId,
+  currentValue,
 }: InvestmentTransactionFormDialogProps) {
   const addTransaction = useAddInvestmentTransaction();
   const { accountOptions } = useLookups();
@@ -76,6 +79,17 @@ export function InvestmentTransactionFormDialog({
   }, [open, investmentId, direction, defaultAccountId]);
 
   const onSubmit = (values: CreateInvestmentTransactionInput) => {
+    if (
+      values.direction === "loss" &&
+      currentValue !== undefined &&
+      values.amount > currentValue
+    ) {
+      form.setError("amount", {
+        message:
+          "More than the current value. Edit the investment's current value instead.",
+      });
+      return;
+    }
     addTransaction.mutate(values, { onSuccess: () => onOpenChange(false) });
   };
 
@@ -95,7 +109,7 @@ export function InvestmentTransactionFormDialog({
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <DateField control={form.control} name="date" label="Date" />
               <NumberField
                 control={form.control}

@@ -3,7 +3,8 @@
 import * as React from "react";
 import { Plus, TrendingUp } from "lucide-react";
 
-import { useIncome, useDeleteIncome } from "@/hooks/use-income";
+import { useIncome, useDeleteIncomeWithUndo } from "@/hooks/use-income";
+import { useEntrySuggestions } from "@/hooks/use-expenses";
 import { useArchiveYears } from "@/hooks/use-history";
 import { useLookups } from "@/hooks/use-lookups";
 import { useCurrency } from "@/hooks/use-settings";
@@ -14,7 +15,6 @@ import type { Income } from "@/types/domain";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { QueryView } from "@/components/shared/query-view";
-import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { RowActions } from "@/components/shared/row-actions";
 import {
   DataTable,
@@ -35,12 +35,12 @@ export default function IncomePage() {
   const { accountName, categoryName, accountOptions, categoryOptions } =
     useLookups();
   const currency = useCurrency();
-  const deleteIncome = useDeleteIncome();
+  const deleteIncome = useDeleteIncomeWithUndo();
+  const suggestions = useEntrySuggestions();
   const archiveYears = useArchiveYears();
 
   const [formOpen, setFormOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<Income | undefined>();
-  const [deleting, setDeleting] = React.useState<Income | undefined>();
 
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(25);
@@ -49,12 +49,21 @@ export default function IncomePage() {
   const [categoryFilter, setCategoryFilter] = React.useState(ALL_VALUE);
   const [accountFilter, setAccountFilter] = React.useState(ALL_VALUE);
   const [yearFilter, setYearFilter] = React.useState(ALL_VALUE);
+  const [tagFilter, setTagFilter] = React.useState(ALL_VALUE);
 
   const search = useDebouncedValue(searchInput, 350);
 
   React.useEffect(() => {
     setPage(1);
-  }, [search, sort, categoryFilter, accountFilter, yearFilter, pageSize]);
+  }, [
+    search,
+    sort,
+    categoryFilter,
+    accountFilter,
+    yearFilter,
+    tagFilter,
+    pageSize,
+  ]);
 
   const incomeQuery = useIncome({
     page,
@@ -65,6 +74,7 @@ export default function IncomePage() {
     categoryId: categoryFilter === ALL_VALUE ? undefined : categoryFilter,
     accountId: accountFilter === ALL_VALUE ? undefined : accountFilter,
     year: yearFilter === ALL_VALUE ? CURRENT_YEAR : yearFilter,
+    tag: tagFilter === ALL_VALUE ? undefined : tagFilter,
   });
 
   // Current and future years still live in the working sheet, so their rows
@@ -78,7 +88,13 @@ export default function IncomePage() {
     Boolean(search) ||
     categoryFilter !== ALL_VALUE ||
     accountFilter !== ALL_VALUE ||
+    tagFilter !== ALL_VALUE ||
     !isLive;
+
+  const tagOptions = (suggestions.data?.tags ?? []).map((tag) => ({
+    label: `#${tag}`,
+    value: tag,
+  }));
 
   const openCreate = () => {
     setEditing(undefined);
@@ -120,6 +136,19 @@ export default function IncomePage() {
         cell: (row) => row.notes ?? "—",
       },
       {
+        id: "tags",
+        mobile: "meta",
+        header: "Tags",
+        cell: (row) =>
+          row.tags?.length ? (
+            <span className="text-primary">
+              {row.tags.map((tag) => `#${tag}`).join(" ")}
+            </span>
+          ) : (
+            "—"
+          ),
+      },
+      {
         id: "amount",
         header: "Amount",
         align: "right",
@@ -139,13 +168,13 @@ export default function IncomePage() {
         cell: (row) => (
           <RowActions
             onEdit={() => openEdit(row)}
-            onDelete={() => setDeleting(row)}
+            onDelete={() => deleteIncome(row.id, "Income deleted")}
           />
         ),
       });
     }
     return result;
-  }, [accountName, categoryName, currency, isLive]);
+  }, [accountName, categoryName, currency, isLive, deleteIncome]);
 
   return (
     <>
@@ -210,6 +239,23 @@ export default function IncomePage() {
                     options={accountOptions}
                     allLabel="All accounts"
                   />
+                  {tagOptions.length > 0 ? (
+
+                    <FilterSelect
+
+                      value={tagFilter}
+
+                      onChange={setTagFilter}
+
+                      options={tagOptions}
+
+                      allLabel="All tags"
+
+                      placeholder="Tag"
+
+                    />
+
+                  ) : null}
                 </>
               }
             />
@@ -221,20 +267,6 @@ export default function IncomePage() {
         open={formOpen}
         onOpenChange={setFormOpen}
         income={editing}
-      />
-      <ConfirmDialog
-        open={Boolean(deleting)}
-        onOpenChange={(open) => !open && setDeleting(undefined)}
-        title="Delete income?"
-        description="This will permanently remove this income entry."
-        confirmLabel="Delete"
-        loading={deleteIncome.isPending}
-        onConfirm={() =>
-          deleting &&
-          deleteIncome.mutate(deleting.id, {
-            onSuccess: () => setDeleting(undefined),
-          })
-        }
       />
     </>
   );

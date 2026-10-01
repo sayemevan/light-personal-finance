@@ -14,7 +14,24 @@ export function formatCurrency(
   return new Intl.NumberFormat(locale, {
     style: "currency",
     currency,
+    // "৳1,250" rather than "BDT 1,250" — shorter, and what people expect.
+    currencyDisplay: "narrowSymbol",
     maximumFractionDigits: 2,
+  }).format(Number.isFinite(value) ? value : 0);
+}
+
+/** Short form for tight spaces on phones, e.g. "৳95K", "৳1.2M". */
+export function formatCompactCurrency(
+  value: number,
+  currency: string = DEFAULT_CURRENCY,
+  locale: string = DEFAULT_LOCALE,
+): string {
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency,
+    currencyDisplay: "narrowSymbol",
+    notation: "compact",
+    maximumFractionDigits: 1,
   }).format(Number.isFinite(value) ? value : 0);
 }
 

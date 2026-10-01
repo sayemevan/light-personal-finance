@@ -14,6 +14,9 @@ import {
   Boxes,
   BarChart3,
   Settings,
+  PieChart,
+  Repeat,
+  Target,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -30,6 +33,9 @@ export const iconMap: Record<NavIcon, LucideIcon> = {
   investments: LineChart,
   assets: Boxes,
   reports: BarChart3,
+  budgets: PieChart,
+  goals: Target,
+  recurring: Repeat,
   settings: Settings,
 };
 
@@ -43,7 +49,7 @@ export function NavLinks({ items, onNavigate }: NavLinksProps) {
   const pathname = usePathname();
 
   return (
-    <nav className="grid gap-1">
+    <nav className="grid grid-cols-1 gap-1">
       {items.map((item) => {
         const isActive =
           pathname === item.href || pathname.startsWith(`${item.href}/`);

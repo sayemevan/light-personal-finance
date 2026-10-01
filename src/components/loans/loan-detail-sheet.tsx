@@ -21,6 +21,8 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LoanPaymentFormDialog } from "@/components/forms/loan-payment-form-dialog";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import type { LoanPayment } from "@/types/domain";
 
 interface LoanDetailSheetProps {
   loanId: string | undefined;
@@ -41,6 +43,7 @@ export function LoanDetailSheet({
   const currency = useCurrency();
   const [paymentOpen, setPaymentOpen] = React.useState(false);
   const [visibleCount, setVisibleCount] = React.useState(HISTORY_PAGE_SIZE);
+  const [deleting, setDeleting] = React.useState<LoanPayment | undefined>();
 
   React.useEffect(() => {
     setVisibleCount(HISTORY_PAGE_SIZE);
@@ -50,6 +53,11 @@ export function LoanDetailSheet({
   const direction: LoanPaymentDirection =
     loan?.type === "lent" ? "receipt" : "payment";
   const visiblePayments = loan?.payments.slice(0, visibleCount) ?? [];
+  const remaining = loan?.remainingBalance ?? 0;
+  const interest =
+    loan?.interestRate ? (loan.principal * loan.interestRate) / 100 : 0;
+  const totalDue = (loan?.principal ?? 0) + interest;
+  const paid = Math.max(0, totalDue - remaining);
 
   return (
     <>
@@ -86,9 +94,27 @@ export function LoanDetailSheet({
                 <div className="rounded-lg border p-3">
                   <p className="text-xs text-muted-foreground">Remaining</p>
                   <p className="text-lg font-semibold">
-                    {formatCurrency(loan.remainingBalance ?? 0, currency)}
+                    {formatCurrency(remaining, currency)}
                   </p>
                 </div>
+              </div>
+              <div className="mt-3 space-y-1.5">
+                <div className="h-2 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-primary transition-all"
+                    style={{
+                      width: `${totalDue > 0 ? Math.min(100, (paid / totalDue) * 100) : 0}%`,
+                    }}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {formatCurrency(paid, currency)}{" "}
+                  {loan.type === "lent" ? "received" : "repaid"} of{" "}
+                  {formatCurrency(totalDue, currency)}
+                  {interest > 0
+                    ? ` (incl. ${formatCurrency(interest, currency)} interest)`
+                    : ""}
+                </p>
               </div>
 
               {loan.accountId ? (
@@ -112,9 +138,17 @@ export function LoanDetailSheet({
 
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold">Payment history</h3>
-                <Button size="sm" onClick={() => setPaymentOpen(true)}>
+                <Button
+                  size="sm"
+                  onClick={() => setPaymentOpen(true)}
+                  disabled={remaining <= 0}
+                >
                   <Plus className="h-4 w-4" />
-                  {direction === "receipt" ? "Add receipt" : "Add payment"}
+                  {remaining <= 0
+                    ? "Fully repaid"
+                    : direction === "receipt"
+                      ? "Add receipt"
+                      : "Add payment"}
                 </Button>
               </div>
 
@@ -146,9 +180,9 @@ export function LoanDetailSheet({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 text-destructive"
+                        className="h-10 w-10 text-destructive sm:h-8 sm:w-8"
                         disabled={deletePayment.isPending}
-                        onClick={() => deletePayment.mutate(payment.id)}
+                        onClick={() => setDeleting(payment)}
                         aria-label="Delete payment"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -181,8 +215,23 @@ export function LoanDetailSheet({
           loanId={loan.id}
           direction={direction}
           defaultAccountId={loan.accountId}
+          remaining={remaining}
         />
       ) : null}
+      <ConfirmDialog
+        open={Boolean(deleting)}
+        onOpenChange={(next) => !next && setDeleting(undefined)}
+        title={direction === "receipt" ? "Delete receipt?" : "Delete payment?"}
+        description="The loan's remaining balance and the account balance will be restored."
+        confirmLabel="Delete"
+        loading={deletePayment.isPending}
+        onConfirm={() =>
+          deleting &&
+          deletePayment.mutate(deleting.id, {
+            onSuccess: () => setDeleting(undefined),
+          })
+        }
+      />
     </>
   );
 }

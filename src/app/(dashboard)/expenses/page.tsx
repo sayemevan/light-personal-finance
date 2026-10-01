@@ -4,7 +4,11 @@ import * as React from "react";
 import Link from "next/link";
 import { ExternalLink, Plus, Receipt } from "lucide-react";
 
-import { useExpenses, useDeleteExpense } from "@/hooks/use-expenses";
+import {
+  useDeleteExpenseWithUndo,
+  useEntrySuggestions,
+  useExpenses,
+} from "@/hooks/use-expenses";
 import { useArchiveYears } from "@/hooks/use-history";
 import { useLookups } from "@/hooks/use-lookups";
 import { useCurrency } from "@/hooks/use-settings";
@@ -16,7 +20,6 @@ import type { Expense } from "@/types/domain";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { QueryView } from "@/components/shared/query-view";
-import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { RowActions } from "@/components/shared/row-actions";
 import {
   DataTable,
@@ -38,12 +41,12 @@ export default function ExpensesPage() {
   const { accountName, categoryName, accountOptions, categoryOptions } =
     useLookups();
   const currency = useCurrency();
-  const deleteExpense = useDeleteExpense();
+  const deleteExpense = useDeleteExpenseWithUndo();
+  const suggestions = useEntrySuggestions();
   const archiveYears = useArchiveYears();
 
   const [formOpen, setFormOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<Expense | undefined>();
-  const [deleting, setDeleting] = React.useState<Expense | undefined>();
 
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(25);
@@ -52,13 +55,22 @@ export default function ExpensesPage() {
   const [categoryFilter, setCategoryFilter] = React.useState(ALL_VALUE);
   const [accountFilter, setAccountFilter] = React.useState(ALL_VALUE);
   const [yearFilter, setYearFilter] = React.useState(ALL_VALUE);
+  const [tagFilter, setTagFilter] = React.useState(ALL_VALUE);
 
   const search = useDebouncedValue(searchInput, 350);
 
   // Return to the first page whenever the query shape changes.
   React.useEffect(() => {
     setPage(1);
-  }, [search, sort, categoryFilter, accountFilter, yearFilter, pageSize]);
+  }, [
+    search,
+    sort,
+    categoryFilter,
+    accountFilter,
+    yearFilter,
+    tagFilter,
+    pageSize,
+  ]);
 
   const expensesQuery = useExpenses({
     page,
@@ -69,6 +81,7 @@ export default function ExpensesPage() {
     categoryId: categoryFilter === ALL_VALUE ? undefined : categoryFilter,
     accountId: accountFilter === ALL_VALUE ? undefined : accountFilter,
     year: yearFilter === ALL_VALUE ? CURRENT_YEAR : yearFilter,
+    tag: tagFilter === ALL_VALUE ? undefined : tagFilter,
   });
 
   // Current and future years still live in the working sheet, so their rows
@@ -82,7 +95,13 @@ export default function ExpensesPage() {
     Boolean(search) ||
     categoryFilter !== ALL_VALUE ||
     accountFilter !== ALL_VALUE ||
+    tagFilter !== ALL_VALUE ||
     !isLive;
+
+  const tagOptions = (suggestions.data?.tags ?? []).map((tag) => ({
+    label: `#${tag}`,
+    value: tag,
+  }));
 
   const openCreate = () => {
     setEditing(undefined);
@@ -156,6 +175,19 @@ export default function ExpensesPage() {
           ),
       },
       {
+        id: "tags",
+        mobile: "meta",
+        header: "Tags",
+        cell: (row) =>
+          row.tags?.length ? (
+            <span className="text-primary">
+              {row.tags.map((tag) => `#${tag}`).join(" ")}
+            </span>
+          ) : (
+            "—"
+          ),
+      },
+      {
         id: "amount",
         header: "Amount",
         align: "right",
@@ -175,13 +207,13 @@ export default function ExpensesPage() {
         cell: (row) => (
           <RowActions
             onEdit={() => openEdit(row)}
-            onDelete={() => setDeleting(row)}
+            onDelete={() => deleteExpense(row.id, "Expense deleted")}
           />
         ),
       });
     }
     return result;
-  }, [accountName, categoryName, currency, isLive]);
+  }, [accountName, categoryName, currency, isLive, deleteExpense]);
 
   return (
     <>
@@ -248,6 +280,23 @@ export default function ExpensesPage() {
                     allLabel="All accounts"
                     placeholder="Account"
                   />
+                  {tagOptions.length > 0 ? (
+
+                    <FilterSelect
+
+                      value={tagFilter}
+
+                      onChange={setTagFilter}
+
+                      options={tagOptions}
+
+                      allLabel="All tags"
+
+                      placeholder="Tag"
+
+                    />
+
+                  ) : null}
                 </>
               }
             />
@@ -259,20 +308,6 @@ export default function ExpensesPage() {
         open={formOpen}
         onOpenChange={setFormOpen}
         expense={editing}
-      />
-      <ConfirmDialog
-        open={Boolean(deleting)}
-        onOpenChange={(open) => !open && setDeleting(undefined)}
-        title="Delete expense?"
-        description="This will permanently remove the expense and its receipt."
-        confirmLabel="Delete"
-        loading={deleteExpense.isPending}
-        onConfirm={() =>
-          deleting &&
-          deleteExpense.mutate(deleting.id, {
-            onSuccess: () => setDeleting(undefined),
-          })
-        }
       />
     </>
   );

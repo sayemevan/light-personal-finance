@@ -50,6 +50,11 @@ export const SHEET_TABS = {
   investments: "Investments",
   investmentTransactions: "Investment Transactions",
   assets: "Assets",
+  transfers: "Transfers",
+  budgets: "Budgets",
+  goals: "Goals",
+  goalContributions: "Goal Contributions",
+  recurring: "Recurring",
   settings: "Settings",
 } as const;
 
@@ -90,6 +95,7 @@ export const SHEET_COLUMNS = {
     "receiptFileId",
     "createdAt",
     "updatedAt",
+    "tags",
   ],
   [SHEET_TABS.income]: [
     "id",
@@ -100,6 +106,7 @@ export const SHEET_COLUMNS = {
     "notes",
     "createdAt",
     "updatedAt",
+    "tags",
   ],
   [SHEET_TABS.loans]: [
     "id",
@@ -156,7 +163,53 @@ export const SHEET_COLUMNS = {
     "createdAt",
     "accountId",
   ],
+  [SHEET_TABS.transfers]: [
+    "id",
+    "date",
+    "amount",
+    "fromAccountId",
+    "toAccountId",
+    "notes",
+    "createdAt",
+  ],
+  [SHEET_TABS.budgets]: ["id", "categoryId", "amount", "createdAt"],
+  [SHEET_TABS.goals]: [
+    "id",
+    "name",
+    "targetAmount",
+    "targetDate",
+    "accountId",
+    "isArchived",
+    "createdAt",
+  ],
+  [SHEET_TABS.goalContributions]: [
+    "id",
+    "goalId",
+    "date",
+    "amount",
+    "notes",
+    "createdAt",
+  ],
+  [SHEET_TABS.recurring]: [
+    "id",
+    "kind",
+    "name",
+    "amount",
+    "categoryId",
+    "accountId",
+    "toAccountId",
+    "paymentMethod",
+    "frequency",
+    "interval",
+    "startDate",
+    "endDate",
+    "nextDate",
+    "autoPost",
+    "isActive",
+    "notes",
+    "createdAt",
+  ],
 } as const;
 
 /** Bumped whenever the sheet schema changes; drives non-destructive migrations. */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;

@@ -13,11 +13,22 @@ export const queryKeys = {
   reports: (name: string) => ["reports", name] as const,
   settings: ["settings"] as const,
   archiveYears: ["archive-years"] as const,
+  transfers: ["transfers"] as const,
+  budgets: ["budgets"] as const,
+  goals: ["goals"] as const,
+  goal: (id: string) => ["goals", id] as const,
+  recurring: ["recurring"] as const,
+  suggestions: ["suggestions"] as const,
+  tags: ["tags"] as const,
+  reminders: ["reminders"] as const,
 };
 
 /** Keys that reflect derived/aggregated data affected by most mutations. */
 export const derivedKeys = [
   queryKeys.dashboard,
   queryKeys.accounts,
+  queryKeys.budgets,
+  queryKeys.goals,
+  queryKeys.reminders,
   ["reports"],
 ];

@@ -109,7 +109,9 @@ export function InvestmentDetailSheet({
                   </p>
                 </div>
                 <div className="rounded-lg border p-3">
-                  <p className="text-xs text-muted-foreground">Gain / loss</p>
+                  <p className="text-xs text-muted-foreground">
+                    Total return
+                  </p>
                   <p
                     className={cn(
                       "text-lg font-semibold",
@@ -119,6 +121,9 @@ export function InvestmentDetailSheet({
                   >
                     {gain > 0 ? "+" : ""}
                     {formatCurrency(gain, currency)}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Value change + income received
                   </p>
                 </div>
                 <div className="rounded-lg border p-3">
@@ -243,6 +248,7 @@ export function InvestmentDetailSheet({
           investmentId={investment.id}
           direction={direction}
           defaultAccountId={investment.accountId}
+          currentValue={investment.currentValue}
         />
       ) : null}
     </>

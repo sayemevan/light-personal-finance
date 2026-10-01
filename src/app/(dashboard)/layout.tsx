@@ -4,6 +4,11 @@ import { auth } from "@/auth";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { BottomNav } from "@/components/layout/bottom-nav";
+import { PullToRefresh } from "@/components/layout/pull-to-refresh";
+import { ServiceWorkerRegister } from "@/components/pwa/sw-register";
+import { OfflineSync } from "@/components/pwa/offline-sync";
+import { ReminderNotifier } from "@/components/pwa/reminders";
+import { RecurringRunner } from "@/components/recurring/recurring-runner";
 
 export default async function DashboardLayout({
   children,
@@ -28,6 +33,12 @@ export default async function DashboardLayout({
         </main>
       </div>
       <BottomNav />
+      <PullToRefresh />
+      {/* Background helpers: no UI except the offline banner / toasts. */}
+      <ServiceWorkerRegister />
+      <OfflineSync />
+      <ReminderNotifier />
+      <RecurringRunner />
     </div>
   );
 }

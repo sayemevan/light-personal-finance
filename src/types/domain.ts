@@ -78,6 +78,8 @@ export interface Expense {
   merchant?: string;
   notes?: string;
   receiptFileId?: string;
+  /** Free-form labels such as "trip-coxsbazar" (stored comma-separated). */
+  tags?: string[];
   createdAt: ISODateTimeString;
   updatedAt: ISODateTimeString;
 }
@@ -89,8 +91,102 @@ export interface Income {
   categoryId: string;
   accountId: string;
   notes?: string;
+  tags?: string[];
   createdAt: ISODateTimeString;
   updatedAt: ISODateTimeString;
+}
+
+/** Money moved between two of the user's own accounts. Not income/expense. */
+export interface Transfer {
+  id: string;
+  date: ISODateString;
+  amount: number;
+  fromAccountId: string;
+  toAccountId: string;
+  notes?: string;
+  createdAt: ISODateTimeString;
+}
+
+/** Category id used for a budget that caps total monthly spending. */
+export const OVERALL_BUDGET_ID = "__overall__";
+
+/** A monthly spending limit for one expense category (or overall). */
+export interface Budget {
+  id: string;
+  /** Expense category id, or `OVERALL_BUDGET_ID`. */
+  categoryId: string;
+  /** Monthly limit. */
+  amount: number;
+  createdAt: ISODateTimeString;
+}
+
+/** Budget usage for one month. Derived, never stored. */
+export interface BudgetStatus extends Budget {
+  month: string; // "2026-07"
+  spent: number;
+  remaining: number;
+  /** spent / amount, 0..∞ */
+  ratio: number;
+  level: "ok" | "warning" | "exceeded";
+}
+
+/** A savings target. */
+export interface Goal {
+  id: string;
+  name: string;
+  targetAmount: number;
+  targetDate?: ISODateString;
+  /**
+   * When set, progress tracks this account's balance (a dedicated savings
+   * account). Otherwise progress is the sum of manual contributions.
+   */
+  accountId?: string;
+  isArchived: boolean;
+  createdAt: ISODateTimeString;
+  /** Derived, not persisted. */
+  savedAmount?: number;
+  /** Derived: amount still needed per month to hit `targetDate`. */
+  monthlyNeeded?: number;
+}
+
+export interface GoalContribution {
+  id: string;
+  goalId: string;
+  date: ISODateString;
+  /** Positive adds to the goal, negative withdraws from it. */
+  amount: number;
+  notes?: string;
+  createdAt: ISODateTimeString;
+}
+
+export type RecurringKind = "expense" | "income" | "transfer";
+export type RecurringFrequency = "daily" | "weekly" | "monthly" | "yearly";
+
+/** A template that generates expenses, income or transfers on a schedule. */
+export interface RecurringRule {
+  id: string;
+  kind: RecurringKind;
+  name: string;
+  amount: number;
+  /** Expense/income category. Unused for transfers. */
+  categoryId?: string;
+  /** Account charged (expense), credited (income) or the transfer source. */
+  accountId: string;
+  /** Transfer destination. */
+  toAccountId?: string;
+  paymentMethod?: PaymentMethod;
+  frequency: RecurringFrequency;
+  /** Repeat every N periods (e.g. 2 + weekly = fortnightly). */
+  interval: number;
+  startDate: ISODateString;
+  endDate?: ISODateString;
+  /** The next date an occurrence is due. */
+  nextDate: ISODateString;
+  /** Post automatically when due; otherwise wait for the user to confirm. */
+  autoPost: boolean;
+  isActive: boolean;
+  notes?: string;
+  createdAt: ISODateTimeString;
 }
 
 export interface Loan {
@@ -111,6 +207,12 @@ export interface Loan {
   createdAt: ISODateTimeString;
   /** Derived, not persisted. */
   remainingBalance?: number;
+  /**
+   * Derived: the status as saved by the user ("active" or a manual
+   * "settled"). `status` itself is the effective one shown in the UI, which
+   * also turns overdue / settled automatically.
+   */
+  storedStatus?: LoanStatus;
 }
 
 export interface LoanPayment {
@@ -196,7 +298,9 @@ export interface DashboardSummary {
   monthIncome: number;
   savings: number;
   recentTransactions: Transaction[];
+  /** Still owed on borrowed loans (active or overdue). */
   outstandingLoans: number;
+  /** Still owed to you on lent loans (active or overdue). */
   moneyLent: number;
   upcomingDuePayments: Loan[];
   monthlySummary: MonthlyPoint[];
@@ -204,7 +308,7 @@ export interface DashboardSummary {
   investmentValue: number;
   /** Total current estimated value of all assets. */
   assetValue: number;
-  /** Cash (account balances) + investments + assets. */
+  /** Cash + investments + assets + money lent − outstanding loans. */
   netWorth: number;
 }
 

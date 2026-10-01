@@ -19,7 +19,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       >
         <QueryProvider>
           <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
-          <Toaster richColors position="top-right" />
+          <Toaster richColors />
         </QueryProvider>
       </ThemeProvider>
     </SessionProvider>

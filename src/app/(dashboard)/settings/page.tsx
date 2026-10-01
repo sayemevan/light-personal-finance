@@ -2,15 +2,25 @@
 
 import * as React from "react";
 import { useSession } from "next-auth/react";
-import { Archive, FolderSync } from "lucide-react";
+import { Archive, Bell, FolderSync, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 import { siteConfig } from "@/config/site";
+import {
+  clearOfflineData,
+  getReminderSupport,
+  notifyDueReminders,
+  registerReminderSync,
+  requestReminderPermission,
+  type ReminderSupport,
+} from "@/lib/pwa";
 import { useSettings, useUpdateSettings } from "@/hooks/use-settings";
 import {
   useArchiveTransactions,
   useVerifyWorkspace,
 } from "@/hooks/use-workspace";
 import { PageHeader } from "@/components/shared/page-header";
+import { ImportLinkCard } from "@/components/import/import-link-card";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -31,6 +41,123 @@ import {
 } from "@/components/ui/card";
 
 const CURRENCIES = ["USD", "EUR", "GBP", "INR", "BDT", "JPY", "AUD", "CAD"];
+
+const REMINDER_STATUS_LABEL: Record<ReminderSupport, string> = {
+  on: "On",
+  off: "Off",
+  blocked: "Blocked in browser settings",
+  unsupported: "Not supported on this browser",
+};
+
+function RemindersCard() {
+  // Read permission after mount so server and first client render match.
+  const [status, setStatus] = React.useState<ReminderSupport | null>(null);
+  const [busy, setBusy] = React.useState(false);
+  const [clearOpen, setClearOpen] = React.useState(false);
+  const [clearing, setClearing] = React.useState(false);
+
+  React.useEffect(() => {
+    setStatus(getReminderSupport());
+  }, []);
+
+  const turnOn = async () => {
+    setBusy(true);
+    try {
+      const next = await requestReminderPermission();
+      setStatus(next);
+      if (next === "on") {
+        await registerReminderSync();
+        const shown = await notifyDueReminders();
+        toast.success(
+          shown > 0
+            ? "Reminders are on."
+            : "Reminders are on. Nothing is due right now.",
+        );
+      } else if (next === "blocked") {
+        toast.error(
+          "Notifications are blocked. Allow them in your browser's site settings.",
+        );
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clear = async () => {
+    setClearing(true);
+    try {
+      await clearOfflineData();
+      toast.success("Offline data cleared.");
+      setClearOpen(false);
+    } finally {
+      setClearing(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Reminders & offline</CardTitle>
+        <CardDescription>
+          Get a notification about loans due within 3 days or overdue,
+          recurring bills due within 2 days, and budgets that reach 80% of
+          their monthly limit.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Reminders are checked when you open the app. On Android with the app
+          installed, your phone may also check in the background now and then
+          — the browser decides when, so timing isn&apos;t exact.
+        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-sm text-muted-foreground">Status</span>
+          <span className="text-sm font-medium">
+            {status ? REMINDER_STATUS_LABEL[status] : "—"}
+          </span>
+          {status === "off" ? (
+            <Button
+              variant="outline"
+              onClick={() => void turnOn()}
+              disabled={busy}
+            >
+              <Bell className="h-4 w-4" />
+              {busy ? "Turning on…" : "Turn on reminders"}
+            </Button>
+          ) : null}
+        </div>
+
+        <Separator />
+
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">
+            Recently viewed data is kept on this device so it can be shown
+            offline. Changes made offline that haven&apos;t synced yet will be
+            lost if you clear it.
+          </p>
+          <Button
+            variant="outline"
+            onClick={() => setClearOpen(true)}
+            disabled={clearing}
+          >
+            <Trash2 className="h-4 w-4" />
+            Clear offline data
+          </Button>
+        </div>
+      </CardContent>
+
+      <ConfirmDialog
+        open={clearOpen}
+        onOpenChange={setClearOpen}
+        title="Clear offline data?"
+        description="Cached pages and data on this device will be removed, along with any offline changes that haven't synced yet. Your Google Sheet is not affected."
+        confirmLabel="Clear"
+        loading={clearing}
+        onConfirm={() => void clear()}
+      />
+    </Card>
+  );
+}
 
 export default function SettingsPage() {
   const { data: session } = useSession();
@@ -110,6 +237,10 @@ export default function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      <ImportLinkCard />
+
+      <RemindersCard />
 
       <Card>
         <CardHeader>

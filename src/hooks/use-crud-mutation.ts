@@ -23,6 +23,14 @@ export function useCrudMutation<TVars, TData>(
       for (const key of options.invalidate) {
         void queryClient.invalidateQueries({ queryKey: key });
       }
+      // Queued while offline: the API client already said so.
+      if (
+        data &&
+        typeof data === "object" &&
+        (data as { pendingSync?: boolean }).pendingSync
+      ) {
+        return;
+      }
       toast.success(
         typeof options.successMessage === "function"
           ? options.successMessage(data)

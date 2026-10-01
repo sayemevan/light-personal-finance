@@ -10,6 +10,8 @@ import {
 } from "@/lib/schemas";
 import { useAddLoanPayment } from "@/hooks/use-loans";
 import { useLookups } from "@/hooks/use-lookups";
+import { useCurrency } from "@/hooks/use-settings";
+import { formatCurrency } from "@/lib/format";
 import type { LoanPaymentDirection } from "@/types/domain";
 import { Form } from "@/components/ui/form";
 import { Button } from "@/components/ui/button";
@@ -34,6 +36,8 @@ interface LoanPaymentFormDialogProps {
   loanId: string;
   direction: LoanPaymentDirection;
   defaultAccountId?: string;
+  /** Still owed on the loan; payments can't exceed it. */
+  remaining: number;
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -44,7 +48,9 @@ export function LoanPaymentFormDialog({
   loanId,
   direction,
   defaultAccountId,
+  remaining,
 }: LoanPaymentFormDialogProps) {
+  const currency = useCurrency();
   const addPayment = useAddLoanPayment();
   const { accountOptions } = useLookups();
 
@@ -80,6 +86,12 @@ export function LoanPaymentFormDialog({
   }, [open, loanId, direction, defaultAccountId]);
 
   const onSubmit = (values: CreateLoanPaymentInput) => {
+    if (values.amount > remaining + 0.005) {
+      form.setError("amount", {
+        message: `Only ${formatCurrency(remaining, currency)} is still owed.`,
+      });
+      return;
+    }
     addPayment.mutate(values, { onSuccess: () => onOpenChange(false) });
   };
 
@@ -99,15 +111,28 @@ export function LoanPaymentFormDialog({
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <DateField control={form.control} name="date" label="Date" />
+            <div className="space-y-1.5">
               <NumberField
                 control={form.control}
                 name="amount"
                 label="Amount"
                 placeholder="0.00"
+                autoFocus
               />
+              <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                <span>Still owed {formatCurrency(remaining, currency)}</span>
+                <button
+                  type="button"
+                  className="font-medium text-primary"
+                  onClick={() =>
+                    form.setValue("amount", remaining, { shouldValidate: true })
+                  }
+                >
+                  Full amount
+                </button>
+              </div>
             </div>
+            <DateField control={form.control} name="date" label="Date" />
             <SelectField
               control={form.control}
               name="accountId"

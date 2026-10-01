@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Plus, Wallet } from "lucide-react";
+import { ArrowLeftRight, Plus, Wallet } from "lucide-react";
 
 import { useAccounts, useDeleteAccount } from "@/hooks/use-accounts";
 import { useCurrency } from "@/hooks/use-settings";
@@ -24,6 +24,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AccountFormDialog } from "@/components/forms/account-form-dialog";
+import { TransferFormDialog } from "@/components/forms/transfer-form-dialog";
+import { TransferList } from "@/components/transfers/transfer-list";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import type { Transfer } from "@/types/domain";
 
 export default function AccountsPage() {
   const accountsQuery = useAccounts();
@@ -34,6 +39,22 @@ export default function AccountsPage() {
   const [editing, setEditing] = React.useState<Account | undefined>();
   const [deleting, setDeleting] = React.useState<Account | undefined>();
   const [typeFilter, setTypeFilter] = React.useState(ALL_VALUE);
+  const [tab, setTab] = React.useState<"accounts" | "transfers">("accounts");
+  const [transferOpen, setTransferOpen] = React.useState(false);
+  const [editingTransfer, setEditingTransfer] = React.useState<
+    Transfer | undefined
+  >();
+  const [transferFrom, setTransferFrom] = React.useState<string | undefined>();
+
+  const openTransfer = React.useCallback((fromAccountId?: string) => {
+    setEditingTransfer(undefined);
+    setTransferFrom(fromAccountId);
+    setTransferOpen(true);
+  }, []);
+  const editTransfer = React.useCallback((transfer: Transfer) => {
+    setEditingTransfer(transfer);
+    setTransferOpen(true);
+  }, []);
 
   const openCreate = () => {
     setEditing(undefined);
@@ -80,21 +101,19 @@ export default function AccountsPage() {
           <RowActions
             onEdit={() => openEdit(row)}
             onDelete={() => setDeleting(row)}
-          />
+          >
+            <DropdownMenuItem onClick={() => openTransfer(row.id)}>
+              <ArrowLeftRight className="h-4 w-4" />
+              Transfer from here
+            </DropdownMenuItem>
+          </RowActions>
         ),
       },
     ],
-    [currency],
+    [currency, openTransfer],
   );
 
-  return (
-    <>
-      <PageHeader
-        title="Accounts"
-        description="Cash, bank, credit cards, mobile banking and custom accounts."
-        action={{ label: "Add account", onClick: openCreate }}
-      />
-
+  const accountsList = (
       <QueryView query={accountsQuery}>
         {(accounts) =>
           accounts.length === 0 ? (
@@ -131,11 +150,59 @@ export default function AccountsPage() {
           )
         }
       </QueryView>
+  );
+
+  return (
+    <>
+      <PageHeader
+        title="Accounts"
+        description="Cash, bank, credit cards, mobile banking and transfers between them."
+        action={
+          tab === "accounts"
+            ? { label: "Add account", onClick: openCreate }
+            : {
+                label: "Transfer",
+                onClick: () => openTransfer(),
+                icon: ArrowLeftRight,
+              }
+        }
+        actions={
+          tab === "accounts" ? (
+            <Button variant="outline" onClick={() => openTransfer()}>
+              <ArrowLeftRight className="h-4 w-4" />
+              Transfer
+            </Button>
+          ) : null
+        }
+      />
+
+      <Tabs
+        value={tab}
+        onValueChange={(value) => setTab(value as "accounts" | "transfers")}
+      >
+        <TabsList className="h-11 w-full sm:h-9 sm:w-auto [&>*]:flex-1 [&>*]:py-1.5 sm:[&>*]:flex-none">
+          <TabsTrigger value="accounts">Accounts</TabsTrigger>
+          <TabsTrigger value="transfers">Transfers</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="accounts" className="mt-4">
+          {accountsList}
+        </TabsContent>
+        <TabsContent value="transfers" className="mt-4">
+          <TransferList onCreate={() => openTransfer()} onEdit={editTransfer} />
+        </TabsContent>
+      </Tabs>
 
       <AccountFormDialog
         open={formOpen}
         onOpenChange={setFormOpen}
         account={editing}
+      />
+      <TransferFormDialog
+        open={transferOpen}
+        onOpenChange={setTransferOpen}
+        transfer={editingTransfer}
+        defaultFromAccountId={transferFrom}
       />
       <ConfirmDialog
         open={Boolean(deleting)}

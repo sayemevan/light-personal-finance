@@ -39,6 +39,10 @@ export async function listIncome(
   if (query.accountId) {
     rows = rows.filter((i) => i.accountId === query.accountId);
   }
+  if (query.tag) {
+    const tag = query.tag.toLowerCase();
+    rows = rows.filter((i) => i.tags?.includes(tag));
+  }
 
   return queryCollection(
     rows,
@@ -56,7 +60,12 @@ export async function listIncome(
         searchable: true,
         sortable: true,
       },
-      { key: "notes", get: (i) => i.notes ?? "", searchable: true },
+      {
+        key: "notes",
+        get: (i) =>
+          `${i.notes ?? ""} ${(i.tags ?? []).map((t) => `#${t}`).join(" ")}`,
+        searchable: true,
+      },
       { key: "amount", get: (i) => i.amount, sortable: true },
     ],
     {
@@ -86,6 +95,7 @@ export async function createIncome(input: CreateIncomeInput): Promise<Income> {
     categoryId: input.categoryId,
     accountId: input.accountId,
     notes: input.notes,
+    tags: input.tags,
     createdAt: now,
     updatedAt: now,
   };

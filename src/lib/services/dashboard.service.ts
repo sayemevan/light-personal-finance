@@ -1,19 +1,12 @@
 import "server-only";
-import {
-  accountsRepo,
-  assetsRepo,
-  expensesRepo,
-  incomeRepo,
-  investmentsRepo,
-  investmentTransactionsRepo,
-  loansRepo,
-  loanPaymentsRepo,
-} from "@/lib/repositories";
-import { getSpreadsheetId } from "@/lib/google/workspace";
+import { loadLedger } from "@/lib/services/ledger.service";
 import {
   buildMonthlySeries,
   computeAccountBalance,
   computeLoanRemaining,
+  computeLoanTotals,
+  computeNetWorth,
+  effectiveLoanStatus,
   monthKey,
 } from "@/lib/finance";
 import type { DashboardSummary, Transaction } from "@/types/domain";
@@ -23,44 +16,17 @@ const UPCOMING_LIMIT = 5;
 
 /** Build the full dashboard payload from the underlying tabs. */
 export async function getDashboardSummary(): Promise<DashboardSummary> {
-  const spreadsheetId = await getSpreadsheetId();
-  const [
-    accounts,
-    expenses,
-    income,
-    loans,
-    payments,
-    investments,
-    assets,
-    investmentTransactions,
-  ] = await Promise.all([
-    accountsRepo.list(spreadsheetId),
-    expensesRepo.list(spreadsheetId),
-    incomeRepo.list(spreadsheetId),
-    loansRepo.list(spreadsheetId),
-    loanPaymentsRepo.list(spreadsheetId),
-    investmentsRepo.list(spreadsheetId),
-    assetsRepo.list(spreadsheetId),
-    investmentTransactionsRepo.list(spreadsheetId),
-  ]);
+  const ledger = await loadLedger();
+  const { accounts, expenses, income, loans, loanPayments, investments, assets } =
+    ledger;
 
   const currentMonth = monthKey(new Date().toISOString());
   const todayISO = new Date().toISOString().slice(0, 10);
 
-  const totalBalance = accounts.reduce(
-    (sum, account) =>
-      sum +
-      computeAccountBalance(
-        account,
-        expenses,
-        income,
-        investments,
-        assets,
-        loans,
-        payments,
-        investmentTransactions,
-      ),
-    0,
+  const totalBalance = Number(
+    accounts
+      .reduce((sum, account) => sum + computeAccountBalance(account, ledger), 0)
+      .toFixed(2),
   );
 
   const investmentValue = investments.reduce(
@@ -73,7 +39,19 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
     0,
   );
 
-  const netWorth = totalBalance + investmentValue + assetValue;
+  // Overdue loans are still owed, so count every loan that isn't settled.
+  const { outstandingBorrowed, outstandingLent } = computeLoanTotals(
+    loans,
+    loanPayments,
+  );
+
+  const netWorth = computeNetWorth({
+    cash: totalBalance,
+    investments: investmentValue,
+    assets: assetValue,
+    receivables: outstandingLent,
+    liabilities: outstandingBorrowed,
+  });
 
   const monthExpense = expenses
     .filter((e) => monthKey(e.date) === currentMonth)
@@ -82,14 +60,6 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
   const monthIncome = income
     .filter((i) => monthKey(i.date) === currentMonth)
     .reduce((sum, i) => sum + i.amount, 0);
-
-  const outstandingLoans = loans
-    .filter((l) => l.type === "borrowed" && l.status === "active")
-    .reduce((sum, l) => sum + computeLoanRemaining(l, payments), 0);
-
-  const moneyLent = loans
-    .filter((l) => l.type === "lent" && l.status === "active")
-    .reduce((sum, l) => sum + computeLoanRemaining(l, payments), 0);
 
   const recentTransactions: Transaction[] = [
     ...expenses.map<Transaction>((e) => ({
@@ -114,9 +84,18 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, RECENT_LIMIT);
 
+  // Overdue first (most urgent), then the soonest upcoming due dates.
   const upcomingDuePayments = loans
-    .filter((l) => l.status === "active" && l.dueDate && l.dueDate >= todayISO)
-    .map((l) => ({ ...l, remainingBalance: computeLoanRemaining(l, payments) }))
+    .filter((l) => l.dueDate)
+    .map((l) => {
+      const remainingBalance = computeLoanRemaining(l, loanPayments);
+      return {
+        ...l,
+        remainingBalance,
+        status: effectiveLoanStatus(l, remainingBalance, todayISO),
+      };
+    })
+    .filter((l) => l.status !== "settled")
     .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""))
     .slice(0, UPCOMING_LIMIT);
 
@@ -125,8 +104,8 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
     monthExpense,
     monthIncome,
     savings: monthIncome - monthExpense,
-    outstandingLoans,
-    moneyLent,
+    outstandingLoans: outstandingBorrowed,
+    moneyLent: outstandingLent,
     recentTransactions,
     upcomingDuePayments,
     monthlySummary: buildMonthlySeries(expenses, income, 6),

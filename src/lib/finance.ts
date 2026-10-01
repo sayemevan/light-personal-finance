@@ -1,13 +1,20 @@
-import type {
-  Account,
-  Asset,
-  Expense,
-  Income,
-  Investment,
-  InvestmentTransaction,
-  Loan,
-  LoanPayment,
-  MonthlyPoint,
+import {
+  OVERALL_BUDGET_ID,
+  type Account,
+  type Asset,
+  type Budget,
+  type BudgetStatus,
+  type Expense,
+  type Goal,
+  type GoalContribution,
+  type Income,
+  type Investment,
+  type InvestmentTransaction,
+  type Loan,
+  type LoanPayment,
+  type LoanStatus,
+  type MonthlyPoint,
+  type Transfer,
 } from "@/types/domain";
 
 /**
@@ -68,75 +75,103 @@ export function sumInvestmentIncomeForAccount(
   );
 }
 
+/** Everything that can move money in or out of an account. */
+export interface BalanceSources {
+  expenses: Expense[];
+  income: Income[];
+  investments?: Investment[];
+  assets?: Asset[];
+  loans?: Loan[];
+  loanPayments?: LoanPayment[];
+  investmentTransactions?: InvestmentTransaction[];
+  transfers?: Transfer[];
+}
+
+/** Money into / out of one account, split by source. */
+export interface AccountFlows {
+  inflow: number;
+  outflow: number;
+}
+
 /**
- * Current balance = opening balance + income in − expense out − money spent
- * buying investments/assets that were funded from this account, plus the effect
- * of loans that moved money through this account:
- *   • lending money out reduces the balance (and repayments received add it back)
- *   • borrowing money in raises the balance (and repayments made reduce it)
+ * Inflow and outflow for an account:
+ *   in:  income, borrowed principal received, loan repayments received,
+ *        investment income, transfers in
+ *   out: expenses, investment/asset purchases funded from it, principal lent
+ *        out, loan repayments made, transfers out
  * Repayments use the payment's own account when set, otherwise the loan's.
- * Investment income received into an account raises its balance.
  */
-export function computeAccountBalance(
-  account: Account,
-  expenses: Expense[],
-  income: Income[],
-  investments: Investment[] = [],
-  assets: Asset[] = [],
-  loans: Loan[] = [],
-  loanPayments: LoanPayment[] = [],
-  investmentTransactions: InvestmentTransaction[] = [],
-): number {
-  const inflow = sumBy(
-    income.filter((i) => i.accountId === account.id),
-    (i) => i.amount,
-  );
-  const outflow = sumBy(
-    expenses.filter((e) => e.accountId === account.id),
-    (e) => e.amount,
-  );
-  const investmentOutflow = sumBy(
-    investments.filter((v) => v.accountId === account.id),
-    (v) => v.amountInvested,
-  );
-  const assetOutflow = sumBy(
-    assets.filter((a) => a.accountId === account.id),
-    (a) => a.purchaseValue,
-  );
+export function computeAccountFlows(
+  accountId: string,
+  sources: BalanceSources,
+): AccountFlows {
+  const {
+    expenses,
+    income,
+    investments = [],
+    assets = [],
+    loans = [],
+    loanPayments = [],
+    investmentTransactions = [],
+    transfers = [],
+  } = sources;
 
-  const accountLoans = loans.filter((l) => l.accountId === account.id);
-
-  // Principal that left the account when lending, or entered when borrowing.
-  const lentOut = sumBy(
-    accountLoans.filter((l) => l.type === "lent"),
-    (l) => l.principal,
-  );
-  const borrowedIn = sumBy(
-    accountLoans.filter((l) => l.type === "borrowed"),
-    (l) => l.principal,
-  );
+  const accountLoans = loans.filter((l) => l.accountId === accountId);
   const { receiptsIn, paymentsOut } = sumLoanPaymentsForAccount(
-    account.id,
+    accountId,
     loans,
     loanPayments,
   );
-  const investmentIncomeIn = sumInvestmentIncomeForAccount(
-    account.id,
-    investmentTransactions,
-  );
 
-  return (
-    account.openingBalance +
-    inflow +
-    borrowedIn +
+  const inflow =
+    sumBy(
+      income.filter((i) => i.accountId === accountId),
+      (i) => i.amount,
+    ) +
+    sumBy(
+      accountLoans.filter((l) => l.type === "borrowed"),
+      (l) => l.principal,
+    ) +
     receiptsIn +
-    investmentIncomeIn -
-    outflow -
-    investmentOutflow -
-    assetOutflow -
-    lentOut -
-    paymentsOut
-  );
+    sumInvestmentIncomeForAccount(accountId, investmentTransactions) +
+    sumBy(
+      transfers.filter((t) => t.toAccountId === accountId),
+      (t) => t.amount,
+    );
+
+  const outflow =
+    sumBy(
+      expenses.filter((e) => e.accountId === accountId),
+      (e) => e.amount,
+    ) +
+    sumBy(
+      investments.filter((v) => v.accountId === accountId),
+      (v) => v.amountInvested,
+    ) +
+    sumBy(
+      assets.filter((a) => a.accountId === accountId),
+      (a) => a.purchaseValue,
+    ) +
+    sumBy(
+      accountLoans.filter((l) => l.type === "lent"),
+      (l) => l.principal,
+    ) +
+    paymentsOut +
+    sumBy(
+      transfers.filter((t) => t.fromAccountId === accountId),
+      (t) => t.amount,
+    );
+
+  return { inflow, outflow };
+}
+
+/** Current balance = opening balance + inflow − outflow. */
+export function computeAccountBalance(
+  account: Account,
+  sources: BalanceSources,
+): number {
+  const { inflow, outflow } = computeAccountFlows(account.id, sources);
+  return Number((account.openingBalance + inflow - outflow).toFixed(2));
 }
 
 /** Total paid so far against a loan (payments for borrowed, receipts for lent). */
@@ -168,14 +203,43 @@ export function computeReturnPct(currentValue: number, basis: number): number {
   return Number(((computeGain(currentValue, basis) / basis) * 100).toFixed(2));
 }
 
-/** Absolute gain/loss on an investment: current value − amount invested. */
-export function computeInvestmentGain(investment: Investment): number {
-  return computeGain(investment.currentValue, investment.amountInvested);
+/** Income (dividends, profit, sale proceeds) received from an investment. */
+export function sumInvestmentIncome(
+  investmentId: string,
+  transactions: InvestmentTransaction[],
+): number {
+  return sumBy(
+    transactions.filter(
+      (t) => t.investmentId === investmentId && t.direction === "income",
+    ),
+    (t) => t.amount,
+  );
 }
 
-/** Investment gain expressed as a percentage of the amount invested. */
-export function computeInvestmentReturnPct(investment: Investment): number {
-  return computeReturnPct(investment.currentValue, investment.amountInvested);
+/**
+ * Total return on an investment: what it's worth now plus what it has paid
+ * out, minus what went in. Counting payouts means selling (record the
+ * proceeds as income, set the value to 0) shows the real profit or loss.
+ */
+export function computeInvestmentGain(
+  investment: Investment,
+  transactions: InvestmentTransaction[] = [],
+): number {
+  return computeGain(
+    investment.currentValue + sumInvestmentIncome(investment.id, transactions),
+    investment.amountInvested,
+  );
+}
+
+/** Total return as a percentage of the amount invested. */
+export function computeInvestmentReturnPct(
+  investment: Investment,
+  transactions: InvestmentTransaction[] = [],
+): number {
+  return computeReturnPct(
+    investment.currentValue + sumInvestmentIncome(investment.id, transactions),
+    investment.amountInvested,
+  );
 }
 
 /** Absolute gain/loss on an asset: current value − purchase value. */
@@ -220,4 +284,140 @@ export function buildMonthlySeries(
   }
 
   return buckets;
+}
+
+/**
+ * Status shown to the user. A loan the user marked settled stays settled;
+ * otherwise it settles itself once fully repaid and turns overdue once its
+ * due date passes with money still owed.
+ */
+export function effectiveLoanStatus(
+  loan: Loan,
+  remaining: number,
+  todayISO: string = new Date().toISOString().slice(0, 10),
+): LoanStatus {
+  if (loan.status === "settled") return "settled";
+  if (remaining <= 0) return "settled";
+  if (loan.dueDate && loan.dueDate < todayISO) return "overdue";
+  return "active";
+}
+
+/** Outstanding borrowed (liabilities) and lent (receivables) totals. */
+export function computeLoanTotals(
+  loans: Loan[],
+  payments: LoanPayment[],
+): { outstandingBorrowed: number; outstandingLent: number } {
+  let outstandingBorrowed = 0;
+  let outstandingLent = 0;
+  for (const loan of loans) {
+    const remaining = computeLoanRemaining(loan, payments);
+    if (effectiveLoanStatus(loan, remaining) === "settled") continue;
+    if (loan.type === "borrowed") outstandingBorrowed += remaining;
+    else outstandingLent += remaining;
+  }
+  return {
+    outstandingBorrowed: Number(outstandingBorrowed.toFixed(2)),
+    outstandingLent: Number(outstandingLent.toFixed(2)),
+  };
+}
+
+/**
+ * Net worth = what you have minus what you owe:
+ *   cash + investments + assets + money lent out − money still owed.
+ * Borrowed principal already sits in cash, so the debt must be subtracted;
+ * lent principal already left cash, so the receivable must be added back.
+ */
+export function computeNetWorth(parts: {
+  cash: number;
+  investments: number;
+  assets: number;
+  receivables: number;
+  liabilities: number;
+}): number {
+  return Number(
+    (
+      parts.cash +
+      parts.investments +
+      parts.assets +
+      parts.receivables -
+      parts.liabilities
+    ).toFixed(2),
+  );
+}
+
+/** Usage of each budget for the given "YYYY-MM" month. */
+export function computeBudgetStatuses(
+  budgets: Budget[],
+  expenses: Expense[],
+  month: string,
+): BudgetStatus[] {
+  const monthExpenses = expenses.filter((e) => monthKey(e.date) === month);
+  const byCategory = new Map<string, number>();
+  for (const expense of monthExpenses) {
+    byCategory.set(
+      expense.categoryId,
+      (byCategory.get(expense.categoryId) ?? 0) + expense.amount,
+    );
+  }
+  const total = sumBy(monthExpenses, (e) => e.amount);
+
+  return budgets.map((budget) => {
+    const spent = Number(
+      (budget.categoryId === OVERALL_BUDGET_ID
+        ? total
+        : (byCategory.get(budget.categoryId) ?? 0)
+      ).toFixed(2),
+    );
+    const ratio = budget.amount > 0 ? spent / budget.amount : 0;
+    return {
+      ...budget,
+      month,
+      spent,
+      remaining: Number((budget.amount - spent).toFixed(2)),
+      ratio,
+      level: ratio >= 1 ? "exceeded" : ratio >= 0.8 ? "warning" : "ok",
+    };
+  });
+}
+
+/** Whole months from `fromISO` until `toISO` (at least 1 if any time left). */
+export function monthsUntil(fromISO: string, toISO: string): number {
+  const from = new Date(`${fromISO.slice(0, 10)}T00:00:00Z`);
+  const to = new Date(`${toISO.slice(0, 10)}T00:00:00Z`);
+  if (to <= from) return 0;
+  const months =
+    (to.getUTCFullYear() - from.getUTCFullYear()) * 12 +
+    (to.getUTCMonth() - from.getUTCMonth()) +
+    (to.getUTCDate() >= from.getUTCDate() ? 0 : -1);
+  return Math.max(1, months);
+}
+
+/**
+ * Saved amount and the monthly contribution still needed for a goal. Linked
+ * goals track the account's balance; others sum their contributions.
+ */
+export function computeGoalProgress(
+  goal: Goal,
+  contributions: GoalContribution[],
+  accountBalance: number | undefined,
+  todayISO: string = new Date().toISOString().slice(0, 10),
+): { savedAmount: number; monthlyNeeded?: number } {
+  const savedAmount = Number(
+    (goal.accountId
+      ? Math.max(0, accountBalance ?? 0)
+      : sumBy(
+          contributions.filter((c) => c.goalId === goal.id),
+          (c) => c.amount,
+        )
+    ).toFixed(2),
+  );
+  const left = Math.max(0, goal.targetAmount - savedAmount);
+  if (!goal.targetDate || left === 0) {
+    return { savedAmount, monthlyNeeded: left === 0 ? 0 : undefined };
+  }
+  const months = monthsUntil(todayISO, goal.targetDate);
+  return {
+    savedAmount,
+    monthlyNeeded: Number((months > 0 ? left / months : left).toFixed(2)),
+  };
 }

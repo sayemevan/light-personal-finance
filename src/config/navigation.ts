@@ -14,6 +14,9 @@ export type NavIcon =
   | "investments"
   | "assets"
   | "reports"
+  | "budgets"
+  | "goals"
+  | "recurring"
   | "settings";
 
 export interface NavItem {
@@ -51,6 +54,24 @@ export const primaryNav: NavItem[] = [
     href: "/accounts",
     icon: "accounts",
     description: "Cash, bank, cards and more",
+  },
+  {
+    title: "Budgets",
+    href: "/budgets",
+    icon: "budgets",
+    description: "Monthly spending limits",
+  },
+  {
+    title: "Recurring",
+    href: "/recurring",
+    icon: "recurring",
+    description: "Bills, salary and subscriptions",
+  },
+  {
+    title: "Goals",
+    href: "/goals",
+    icon: "goals",
+    description: "Savings targets",
   },
   {
     title: "Categories",
@@ -103,9 +124,16 @@ export const bottomNavHrefs = [
 
 const allNav = [...primaryNav, ...secondaryNav];
 
+/** Pages reached from elsewhere (not listed in nav) that still need a title. */
+const unlistedPages: Pick<NavItem, "title" | "href">[] = [
+  { title: "Import statement", href: "/import" },
+];
+
 /** The nav item that owns `pathname`, used for the mobile app bar title. */
-export function findNavItem(pathname: string): NavItem | undefined {
-  return allNav.find(
+export function findNavItem(
+  pathname: string,
+): Pick<NavItem, "title" | "href"> | undefined {
+  return [...allNav, ...unlistedPages].find(
     (item) => pathname === item.href || pathname.startsWith(`${item.href}/`),
   );
 }

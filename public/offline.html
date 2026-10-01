@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#22c55e" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Offline · My Finance</title>
+    <link rel="icon" href="/icons/icon-192.png" />
+    <style>
+      :root {
+        --bg: #ffffff;
+        --fg: #09090b;
+        --muted: #71717a;
+        --card: #f4f4f5;
+        --border: #e4e4e7;
+        --primary: #22c55e;
+        --primary-fg: #fafafa;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #09090b;
+          --fg: #fafafa;
+          --muted: #a1a1aa;
+          --card: #18181b;
+          --border: #27272a;
+          --primary-fg: #09090b;
+        }
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        background: var(--bg);
+        color: var(--fg);
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px 16px;
+      }
+      main {
+        width: 100%;
+        max-width: 380px;
+        text-align: center;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 32px 24px;
+      }
+      img { width: 64px; height: 64px; border-radius: 14px; }
+      h1 { font-size: 1.25rem; margin: 16px 0 8px; }
+      p { color: var(--muted); font-size: 0.925rem; line-height: 1.5; margin: 0 0 20px; }
+      button {
+        appearance: none;
+        border: 0;
+        border-radius: 10px;
+        background: var(--primary);
+        color: var(--primary-fg);
+        font: inherit;
+        font-weight: 600;
+        padding: 10px 20px;
+        cursor: pointer;
+      }
+      button:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/icons/icon-192.png" alt="" />
+      <h1>You're offline</h1>
+      <p>
+        This page hasn't been saved for offline use yet. Pages you've opened
+        before still work, and anything you add offline will sync once you're
+        back online.
+      </p>
+      <button type="button" onclick="location.reload()">Try again</button>
+    </main>
+    <script>
+      window.addEventListener("online", function () { location.reload(); });
+    </script>
+  </body>
+</html>

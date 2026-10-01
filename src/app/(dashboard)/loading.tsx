@@ -8,7 +8,7 @@ import { TableSkeleton } from "@/components/shared/table-skeleton";
 export default function DashboardGroupLoading() {
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="hidden flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:flex">
         <div className="space-y-2">
           <Skeleton className="h-8 w-40" />
           <Skeleton className="h-4 w-64" />

@@ -4,11 +4,14 @@ import {
   investmentTransactionsRepo,
 } from "@/lib/repositories";
 import { getSpreadsheetId } from "@/lib/google/workspace";
+import { loadLedger } from "@/lib/services/ledger.service";
 import {
   computeInvestmentGain,
   computeInvestmentReturnPct,
 } from "@/lib/finance";
 import { generateId } from "@/lib/id";
+import { formatCurrency } from "@/lib/format";
+import { getSettings } from "@/lib/services/settings.service";
 import { AppError } from "@/lib/errors";
 import type { Investment, InvestmentTransaction } from "@/types/domain";
 import type {
@@ -16,22 +19,33 @@ import type {
   CreateInvestmentTransactionInput,
 } from "@/lib/schemas";
 
-/** Attach derived gain / return figures to an investment. */
-function withDerived(investment: Investment): Investment {
+/** Attach derived gain / return figures (including payouts received). */
+function withDerived(
+  investment: Investment,
+  transactions: InvestmentTransaction[],
+): Investment {
   return {
     ...investment,
-    gain: computeInvestmentGain(investment),
-    returnPct: computeInvestmentReturnPct(investment),
+    gain: computeInvestmentGain(investment, transactions),
+    returnPct: computeInvestmentReturnPct(investment, transactions),
   };
 }
 
 /** List investments with computed gain and return, newest purchase first. */
 export async function listInvestments(): Promise<Investment[]> {
-  const spreadsheetId = await getSpreadsheetId();
-  const investments = await investmentsRepo.list(spreadsheetId);
+  const { investments, investmentTransactions } = await loadLedger();
   return investments
-    .map(withDerived)
+    .map((investment) => withDerived(investment, investmentTransactions))
     .sort((a, b) => b.purchaseDate.localeCompare(a.purchaseDate));
+}
+
+async function transactionsFor(
+  spreadsheetId: string,
+  investmentId: string,
+): Promise<InvestmentTransaction[]> {
+  return (await investmentTransactionsRepo.list(spreadsheetId)).filter(
+    (t) => t.investmentId === investmentId,
+  );
 }
 
 export async function getInvestment(
@@ -45,7 +59,7 @@ export async function getInvestment(
     .filter((t) => t.investmentId === id)
     .sort((a, b) => b.date.localeCompare(a.date));
 
-  return { ...withDerived(investment), transactions };
+  return { ...withDerived(investment, transactions), transactions };
 }
 
 export async function createInvestment(
@@ -63,7 +77,7 @@ export async function createInvestment(
     notes: input.notes,
     createdAt: new Date().toISOString(),
   };
-  return withDerived(await investmentsRepo.create(spreadsheetId, investment));
+  return withDerived(await investmentsRepo.create(spreadsheetId, investment), []);
 }
 
 export async function updateInvestment(
@@ -71,7 +85,14 @@ export async function updateInvestment(
   input: Partial<CreateInvestmentInput>,
 ): Promise<Investment> {
   const spreadsheetId = await getSpreadsheetId();
-  return withDerived(await investmentsRepo.update(spreadsheetId, id, input));
+  const updated = await investmentsRepo.update(spreadsheetId, id, {
+    ...input,
+    // An emptied "Paid from" means an external source, not account "".
+    ...(input.accountId !== undefined
+      ? { accountId: input.accountId || undefined }
+      : {}),
+  });
+  return withDerived(updated, await transactionsFor(spreadsheetId, id));
 }
 
 export async function deleteInvestment(id: string): Promise<void> {
@@ -106,6 +127,16 @@ export async function addInvestmentTransaction(
   );
   if (!investment) throw AppError.notFound("Investment not found.");
 
+  // A loss can't take the value below zero; deleting the entry later restores
+  // exactly this amount, so it must be fully applied.
+  if (input.direction === "loss" && input.amount > investment.currentValue) {
+    const { currency } = await getSettings();
+    throw AppError.validation(
+      `A loss can't be more than the current value (${formatCurrency(investment.currentValue, currency)}). Edit the investment's current value instead.`,
+      { amount: ["More than the current value"] },
+    );
+  }
+
   const transaction: InvestmentTransaction = {
     id: generateId(),
     investmentId: input.investmentId,
@@ -123,9 +154,8 @@ export async function addInvestmentTransaction(
   );
 
   if (input.direction === "loss") {
-    const nextValue = Math.max(
-      0,
-      Number((investment.currentValue - input.amount).toFixed(2)),
+    const nextValue = Number(
+      (investment.currentValue - input.amount).toFixed(2),
     );
     await investmentsRepo.update(spreadsheetId, investment.id, {
       currentValue: nextValue,

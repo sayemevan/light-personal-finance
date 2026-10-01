@@ -5,7 +5,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
 import { createLoanSchema, type CreateLoanInput } from "@/lib/schemas";
-import { LOAN_TYPE_OPTIONS, LOAN_STATUS_OPTIONS } from "@/lib/labels";
+import { LOAN_TYPE_OPTIONS } from "@/lib/labels";
+import { useCurrency } from "@/hooks/use-settings";
+import { formatCurrency } from "@/lib/format";
 import { useLookups } from "@/hooks/use-lookups";
 import { useCreateLoan, useUpdateLoan } from "@/hooks/use-loans";
 import type { Loan } from "@/types/domain";
@@ -44,6 +46,7 @@ export function LoanFormDialog({
   const { accountOptions } = useLookups();
   const createLoan = useCreateLoan();
   const updateLoan = useUpdateLoan();
+  const currency = useCurrency();
 
   const form = useForm<CreateLoanInput>({
     resolver: zodResolver(createLoanSchema),
@@ -78,8 +81,12 @@ export function LoanFormDialog({
             principal: loan.principal,
             interestRate: loan.interestRate,
             borrowDate: loan.borrowDate,
-            dueDate: loan.dueDate,
-            status: loan.status,
+            dueDate: loan.dueDate ?? "",
+            // The saved choice, not the automatic overdue/settled display.
+            status:
+              (loan.storedStatus ?? loan.status) === "settled"
+                ? "settled"
+                : "active",
             notes: loan.notes ?? "",
           }
         : {
@@ -97,12 +104,31 @@ export function LoanFormDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, loan]);
 
+  const principal = Number(form.watch("principal")) || 0;
+  const interestRate = Number(form.watch("interestRate")) || 0;
+  const totalDue = principal + (principal * interestRate) / 100;
+
   const onSubmit = (values: CreateLoanInput) => {
     const done = () => onOpenChange(false);
     if (isEdit && loan) {
-      updateLoan.mutate({ id: loan.id, input: values }, { onSuccess: done });
+      // Send explicit "cleared" values so removing a due date or the
+      // interest rate actually saves (undefined fields are dropped in JSON).
+      updateLoan.mutate(
+        {
+          id: loan.id,
+          input: {
+            ...values,
+            dueDate: values.dueDate ?? "",
+            interestRate: values.interestRate ?? 0,
+          },
+        },
+        { onSuccess: done },
+      );
     } else {
-      createLoan.mutate(values, { onSuccess: done });
+      createLoan.mutate(
+        { ...values, dueDate: values.dueDate || undefined },
+        { onSuccess: done },
+      );
     }
   };
 
@@ -122,7 +148,7 @@ export function LoanFormDialog({
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <SelectField
                 control={form.control}
                 name="type"
@@ -133,7 +159,11 @@ export function LoanFormDialog({
                 control={form.control}
                 name="status"
                 label="Status"
-                options={LOAN_STATUS_OPTIONS}
+                options={[
+                  { label: "Active", value: "active" },
+                  { label: "Settled (close it)", value: "settled" },
+                ]}
+                description="Overdue and fully repaid are detected automatically."
               />
             </div>
             <TextField
@@ -150,7 +180,7 @@ export function LoanFormDialog({
               description={accountDescription}
               options={accountOptions}
             />
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <NumberField
                 control={form.control}
                 name="principal"
@@ -165,7 +195,13 @@ export function LoanFormDialog({
                 step="0.1"
               />
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
+            {interestRate > 0 && principal > 0 ? (
+              <p className="-mt-2 text-xs text-muted-foreground">
+                Total to repay {formatCurrency(totalDue, currency)} (simple
+                interest on the amount).
+              </p>
+            ) : null}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <DateField
                 control={form.control}
                 name="borrowDate"

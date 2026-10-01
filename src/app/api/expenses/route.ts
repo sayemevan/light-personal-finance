@@ -2,8 +2,15 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api-response";
 import { requireSession } from "@/lib/auth/session";
-import { createExpenseSchema, expenseListQuerySchema } from "@/lib/schemas";
-import { createExpense, listExpenses } from "@/lib/services/expense.service";
+import {
+  createExpenseWithSplitSchema,
+  expenseListQuerySchema,
+} from "@/lib/schemas";
+import {
+  createExpenseWithSplit,
+  listExpenses,
+} from "@/lib/services/expense.service";
+import { getBudgetAlert } from "@/lib/services/budget.service";
 
 export async function GET(req: NextRequest) {
   try {
@@ -20,9 +27,17 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     await requireSession();
-    const input = createExpenseSchema.parse(await req.json());
-    const created = await createExpense(input);
-    return ok(created, { status: 201 });
+    const input = createExpenseWithSplitSchema.parse(await req.json());
+    const { expense, loans } = await createExpenseWithSplit(input);
+    // A budget warning is a nice-to-have; never fail the save over it.
+    const budgetAlert = await getBudgetAlert(
+      expense.categoryId,
+      expense.date,
+    ).catch(() => null);
+    return ok(
+      { ...expense, splitLoans: loans.length, budgetAlert },
+      { status: 201 },
+    );
   } catch (error) {
     return fail(error);
   }

@@ -9,6 +9,7 @@ import { useCrudMutation } from "@/hooks/use-crud-mutation";
 import type { Income } from "@/types/domain";
 import type { Paginated } from "@/types/api";
 import type { CreateIncomeInput } from "@/lib/schemas";
+import { useUndoableDelete } from "@/hooks/use-undoable-delete";
 
 const INVALIDATE = [queryKeys.income, ...derivedKeys] as const;
 
@@ -41,4 +42,12 @@ export function useDeleteIncome() {
     (id: string) => api.delete<{ id: string }>(`/api/income/${id}`),
     { successMessage: "Income deleted.", invalidate: INVALIDATE },
   );
+}
+
+export function useDeleteIncomeWithUndo() {
+  return useUndoableDelete({
+    listKey: queryKeys.income,
+    endpoint: "/api/income",
+    invalidate: INVALIDATE,
+  });
 }
