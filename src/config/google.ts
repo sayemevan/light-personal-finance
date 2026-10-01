@@ -10,9 +10,11 @@ export const GOOGLE_SCOPES = [
   "email",
   "profile",
   // Access only files this app creates (avoids the restricted `drive` scope).
+  // The Sheets API accepts it too, so the spreadsheets the app creates
+  // (Finance, archives) need no broader scope. `spreadsheets` (every sheet in
+  // the user's Drive) is a sensitive scope that triggers Google's
+  // "unverified app" warning, so it is deliberately not requested.
   "https://www.googleapis.com/auth/drive.file",
-  // Read/write the finance spreadsheet.
-  "https://www.googleapis.com/auth/spreadsheets",
 ] as const;
 
 /** Google Drive folder / file names created on first login. */
