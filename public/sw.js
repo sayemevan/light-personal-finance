@@ -7,6 +7,8 @@
  * - Navigations: network-first (4s timeout) → cached copy → /offline.html.
  * - GET /api/* (except /api/auth/*): network-first → last cached response,
  *   marked with `x-from-cache: 1`.
+ * - Navigations to /api/* (OAuth callback, downloads): answered with the
+ *   navigation preload response, so the request is never sent twice.
  * - periodicsync "reminders": fetches /api/reminders and shows notifications
  *   (deduped per day).
  *
@@ -117,6 +119,13 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
 
   if (url.pathname.startsWith("/api/")) {
+    if (request.mode === "navigate") {
+      // Navigation preload has already sent this request. Not answering would
+      // make the browser send it again, and a second hit on the OAuth
+      // callback reuses its one-time code (Google: invalid_grant).
+      event.respondWith(preloadOrFetch(event, request));
+      return;
+    }
     if (url.pathname.startsWith("/api/auth")) return; // Never cache auth.
     event.respondWith(apiNetworkFirst(event, request));
     return;
@@ -203,6 +212,14 @@ async function navigationHandler(event, request) {
       })
     );
   }
+}
+
+/** The navigation preload response if there is one, else a plain fetch. */
+async function preloadOrFetch(event, request) {
+  const preloaded = await Promise.resolve(event.preloadResponse).catch(
+    () => undefined,
+  );
+  return preloaded || fetch(request);
 }
 
 /** Network-first for API reads; falls back to the last good response. */
