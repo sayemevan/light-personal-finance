@@ -11,6 +11,7 @@ import { assertReceipt, removeReceipt } from "@/lib/services/receipt.service";
 import { getExpensesForYear } from "@/lib/services/history.service";
 import { queryCollection } from "@/lib/services/query";
 import { generateId } from "@/lib/id";
+import type { CreateOptions } from "@/lib/idempotency";
 import { AppError } from "@/lib/errors";
 import type { Expense, Loan, PaymentMethod } from "@/types/domain";
 import type { Paginated } from "@/types/api";
@@ -109,9 +110,13 @@ async function checkReceiptId(
 
 export async function createExpense(
   input: CreateExpenseInput,
-  options: { id?: string } = {},
+  options: CreateOptions = {},
 ): Promise<Expense> {
   const { spreadsheetId } = await getWorkspaceForCurrentUser();
+  if (options.id && options.ifAbsent) {
+    const existing = await expensesRepo.findById(spreadsheetId, options.id);
+    if (existing) return existing;
+  }
   await checkReceiptId(input.receiptFileId);
   const now = new Date().toISOString();
   const expense: Expense = {
@@ -169,7 +174,15 @@ export async function deleteExpense(id: string): Promise<void> {
  */
 export async function createExpenseWithSplit(
   input: CreateExpenseWithSplitInput & CreateExpenseInput,
+  options: CreateOptions = {},
 ): Promise<{ expense: Expense; loans: Loan[] }> {
+  if (options.id && options.ifAbsent) {
+    // Replay of a create that already went through: its split loans were
+    // saved with it, so don't add them again.
+    const { spreadsheetId } = await getWorkspaceForCurrentUser();
+    const existing = await expensesRepo.findById(spreadsheetId, options.id);
+    if (existing) return { expense: existing, loans: [] };
+  }
   const splits = input.splits ?? [];
   const othersTotal = splits.reduce((sum, split) => sum + split.amount, 0);
   const share = Number((input.amount - othersTotal).toFixed(2));
@@ -181,20 +194,23 @@ export async function createExpenseWithSplit(
   }
 
   const { splits: _splits, ...expenseInput } = input;
-  const expense = await createExpense({
-    ...expenseInput,
-    amount: share,
-    notes: splits.length
-      ? [
-          input.notes,
-          `Split bill: total ${input.amount}, shared with ${splits
-            .map((s) => s.person)
-            .join(", ")}`,
-        ]
-          .filter(Boolean)
-          .join(" · ")
-      : input.notes,
-  });
+  const expense = await createExpense(
+    {
+      ...expenseInput,
+      amount: share,
+      notes: splits.length
+        ? [
+            input.notes,
+            `Split bill: total ${input.amount}, shared with ${splits
+              .map((s) => s.person)
+              .join(", ")}`,
+          ]
+            .filter(Boolean)
+            .join(" · ")
+        : input.notes,
+    },
+    { id: options.id },
+  );
 
   if (splits.length === 0) return { expense, loans: [] };
 

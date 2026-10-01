@@ -36,7 +36,7 @@ export default async function DashboardLayout({
       <PullToRefresh />
       {/* Background helpers: no UI except the offline banner / toasts. */}
       <ServiceWorkerRegister />
-      <OfflineSync />
+      <OfflineSync userId={session.user.id || session.user.email || ""} />
       <ReminderNotifier />
       <RecurringRunner />
     </div>

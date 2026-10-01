@@ -3,6 +3,7 @@ import { accountsRepo, transfersRepo } from "@/lib/repositories";
 import { getSpreadsheetId } from "@/lib/google/workspace";
 import { queryCollection } from "@/lib/services/query";
 import { generateId } from "@/lib/id";
+import type { CreateOptions } from "@/lib/idempotency";
 import { AppError } from "@/lib/errors";
 import type { Transfer } from "@/types/domain";
 import type { Paginated } from "@/types/api";
@@ -80,9 +81,13 @@ async function assertAccounts(
 
 export async function createTransfer(
   input: CreateTransferInput,
-  options: { id?: string } = {},
+  options: CreateOptions = {},
 ): Promise<Transfer> {
   const spreadsheetId = await getSpreadsheetId();
+  if (options.id && options.ifAbsent) {
+    const existing = await transfersRepo.findById(spreadsheetId, options.id);
+    if (existing) return existing;
+  }
   await assertAccounts(spreadsheetId, [input.fromAccountId, input.toAccountId]);
   const transfer: Transfer = {
     id: options.id ?? generateId(),

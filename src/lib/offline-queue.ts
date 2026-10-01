@@ -3,9 +3,19 @@
  * transfers made while the device is offline are stored in localStorage and
  * replayed, in order, once the connection is back. Every storage access is
  * guarded: private windows or blocked storage simply disable queueing.
+ *
+ * Safety rules:
+ * - every item records the user it belongs to and is only ever replayed for
+ *   that user (see `claimOfflineData`);
+ * - only one tab replays at a time (Web Locks), reading the queue fresh;
+ * - POSTs carry `Idempotency-Key: <tempId>`, which the server uses as the
+ *   record id, so a replay whose response was lost can't create a duplicate.
  */
 
 const STORAGE_KEY = "pf.offline-queue.v1";
+/** Last signed-in user on this device; queued items are tagged with it. */
+const OWNER_KEY = "pf.offline-owner.v1";
+const FLUSH_LOCK = "pf-offline-flush";
 /** Window event fired whenever the queue's contents change. */
 export const OFFLINE_QUEUE_EVENT = "pf:offline-queue-change";
 /** Permanent (4xx) failures after which an item is dropped. */
@@ -26,6 +36,8 @@ export interface QueuedRequest {
   createdAt: number;
   /** Number of permanent (4xx) failures seen so far. */
   failures: number;
+  /** User the write was made by; absent on items queued by older versions. */
+  owner?: string;
 }
 
 export interface FlushResult {
@@ -113,6 +125,36 @@ export function queueSize(): number {
   return readQueue().length;
 }
 
+function readOwner(): string | null {
+  if (!isBrowser()) return null;
+  try {
+    return window.localStorage.getItem(OWNER_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Record `userId` as this device's signed-in user. Returns true when the
+ * offline data on the device belongs to someone else (a different user
+ * signed in): the caller must then wipe it with `clearOfflineData` before
+ * syncing, or that user's queued writes would be replayed into this account
+ * and their cached data shown.
+ */
+export function claimOfflineData(userId: string): boolean {
+  if (!isBrowser() || !userId) return false;
+  const previous = readOwner();
+  const foreignItems = readQueue().some(
+    (item) => item.owner && item.owner !== userId,
+  );
+  try {
+    window.localStorage.setItem(OWNER_KEY, userId);
+  } catch {
+    // Storage blocked: queueing is disabled anyway.
+  }
+  return (previous !== null && previous !== userId) || foreignItems;
+}
+
 /**
  * Append a request to the queue. Returns the stored item, or `null` when
  * storage is unavailable (the caller should then surface the original error).
@@ -121,14 +163,16 @@ export function enqueue(
   method: QueuedMethod,
   path: string,
   body?: string,
+  tempId: string = generateTempId(),
 ): QueuedRequest | null {
   const item: QueuedRequest = {
-    tempId: generateTempId(),
+    tempId,
     method,
     path,
     body,
     createdAt: Date.now(),
     failures: 0,
+    owner: readOwner() ?? undefined,
   };
   return writeQueue([...readQueue(), item]) ? item : null;
 }
@@ -168,18 +212,42 @@ function isPermanentFailure(status: number): boolean {
 let flushing: Promise<FlushResult> | null = null;
 
 /**
- * Replay queued writes in order. Stops at the first network or server error
- * (keeping that item and everything after it); permanent 4xx responses count
- * towards dropping an item. Concurrent calls share one flush.
+ * Replay queued writes in order. Stops at the first error, keeping that item
+ * and everything after it, so writes never run out of order; a permanent 4xx
+ * counts towards dropping the item. Concurrent calls in this tab share one
+ * flush, and other tabs wait for it (then find those items gone).
  */
 export function flushQueue(): Promise<FlushResult> {
   if (!flushing) {
-    flushing = runFlush().finally(() => {
+    const locks =
+      typeof navigator !== "undefined" ? navigator.locks : undefined;
+    // The lock is held until the callback's promise settles, i.e. until
+    // runFlush finishes.
+    const run = locks
+      ? new Promise<FlushResult>((resolve, reject) => {
+          locks
+            .request(FLUSH_LOCK, () => runFlush().then(resolve, reject))
+            .catch(reject);
+        })
+      : runFlush();
+    flushing = run.finally(() => {
       flushing = null;
     });
   }
   return flushing;
 }
+
+/**
+ * Sent on creates; the server stores the record under this key's id, so a
+ * create sent twice can be recognised.
+ */
+export const IDEMPOTENCY_HEADER = "Idempotency-Key";
+/**
+ * Marks a replay from this queue. Only then does the server check whether
+ * the record already exists (one extra Sheets read), so normal saves cost
+ * nothing extra.
+ */
+export const REPLAY_HEADER = "X-Offline-Replay";
 
 async function runFlush(): Promise<FlushResult> {
   const result: FlushResult = { synced: 0, dropped: [], remaining: 0 };
@@ -188,12 +256,24 @@ async function runFlush(): Promise<FlushResult> {
     return result;
   }
 
+  // Only the current user's writes are replayed; anything else on the device
+  // is removed by claimOfflineData + clearOfflineData before sync starts.
+  const owner = readOwner();
+  if (!owner) {
+    result.remaining = queueSize();
+    return result;
+  }
+
   const idMap = new Map<string, string>();
   const processed = new Set<string>();
   const updated = new Map<string, QueuedRequest>();
-  const snapshot = readQueue();
+  // Read inside the lock: another tab may have just synced some of these.
+  const snapshot = readQueue().filter(
+    (item) => !item.owner || item.owner === owner,
+  );
 
   for (const item of snapshot) {
+    if (processed.has(item.tempId)) continue; // dropped with its parent
     const path = remapIds(item.path, idMap);
     const body = item.body ? remapIds(item.body, idMap) : undefined;
 
@@ -201,7 +281,13 @@ async function runFlush(): Promise<FlushResult> {
     try {
       res = await fetch(path, {
         method: item.method,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          [REPLAY_HEADER]: "1",
+          ...(item.method === "POST"
+            ? { [IDEMPOTENCY_HEADER]: item.tempId }
+            : {}),
+        },
         body,
         // A redirect means the request never reached the API (e.g. sent to
         // sign-in); following it would make an HTML page look like success.
@@ -221,7 +307,8 @@ async function runFlush(): Promise<FlushResult> {
       break;
     }
 
-    if (res.ok) {
+    // A DELETE that 404s already happened (e.g. its response was lost).
+    if (res.ok || (item.method === "DELETE" && res.status === 404)) {
       processed.add(item.tempId);
       result.synced += 1;
       if (item.method === "POST") {
@@ -243,11 +330,26 @@ async function runFlush(): Promise<FlushResult> {
 
     if (isPermanentFailure(res.status)) {
       const failures = item.failures + 1;
-      if (failures >= MAX_PERMANENT_FAILURES) {
-        processed.add(item.tempId);
-        result.dropped.push({ ...item, failures });
-      } else {
+      if (failures < MAX_PERMANENT_FAILURES) {
+        // Stop rather than skip: later writes may edit or delete this record
+        // and must not run before it.
         updated.set(item.tempId, { ...item, path, body, failures });
+        break;
+      }
+      processed.add(item.tempId);
+      result.dropped.push({ ...item, failures });
+      // A create that never happened takes its follow-up edits with it:
+      // they still point at its temporary id and can only fail.
+      if (item.method === "POST") {
+        for (const later of snapshot) {
+          const refersToIt =
+            later.path.includes(item.tempId) ||
+            (later.body ?? "").includes(item.tempId);
+          if (refersToIt && !processed.has(later.tempId)) {
+            processed.add(later.tempId);
+            result.dropped.push(later);
+          }
+        }
       }
       continue;
     }

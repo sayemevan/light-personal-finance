@@ -4,6 +4,7 @@ import Link from "next/link";
 import { signOut } from "next-auth/react";
 import { LogOut, User as UserIcon } from "lucide-react";
 
+import { flushQueue, queueSize } from "@/lib/offline-queue";
 import { clearOfflineData } from "@/lib/pwa";
 
 import {
@@ -20,6 +21,31 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+
+/**
+ * Sync offline changes before signing out; signing out wipes the queue, so
+ * ask before discarding anything that still couldn't be sent.
+ */
+async function signOutSafely() {
+  if (queueSize() > 0) {
+    const { remaining } = await flushQueue().catch(() => ({
+      remaining: queueSize(),
+    }));
+    if (
+      remaining > 0 &&
+      !window.confirm(
+        `${remaining} change${remaining === 1 ? "" : "s"} made offline ` +
+          `${remaining === 1 ? "hasn't" : "haven't"} synced yet. ` +
+          "Sign out anyway and discard " +
+          `${remaining === 1 ? "it" : "them"}?`,
+      )
+    ) {
+      return;
+    }
+  }
+  await clearOfflineData().catch(() => undefined);
+  await signOut({ callbackUrl: "/sign-in" });
+}
 
 interface UserNavProps {
   name?: string | null;
@@ -72,11 +98,7 @@ export function UserNav({ name, email, image }: UserNavProps) {
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="text-destructive focus:text-destructive"
-          onClick={() =>
-            void clearOfflineData()
-              .catch(() => undefined)
-              .then(() => signOut({ callbackUrl: "/sign-in" }))
-          }
+          onClick={() => void signOutSafely()}
         >
           <LogOut className="h-4 w-4" />
           Sign out

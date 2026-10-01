@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api-response";
 import { requireSession } from "@/lib/auth/session";
+import { createOptions } from "@/lib/idempotency";
 import {
   createExpenseWithSplitSchema,
   expenseListQuerySchema,
@@ -28,7 +29,10 @@ export async function POST(req: NextRequest) {
   try {
     await requireSession();
     const input = createExpenseWithSplitSchema.parse(await req.json());
-    const { expense, loans } = await createExpenseWithSplit(input);
+    const { expense, loans } = await createExpenseWithSplit(
+      input,
+      createOptions(req),
+    );
     // A budget warning is a nice-to-have; never fail the save over it.
     const budgetAlert = await getBudgetAlert(
       expense.categoryId,

@@ -8,6 +8,7 @@ import { getSpreadsheetId, getWorkspaceForCurrentUser } from "@/lib/google/works
 import { getIncomeForYear } from "@/lib/services/history.service";
 import { queryCollection } from "@/lib/services/query";
 import { generateId } from "@/lib/id";
+import type { CreateOptions } from "@/lib/idempotency";
 import { AppError } from "@/lib/errors";
 import type { Income } from "@/types/domain";
 import type { Paginated } from "@/types/api";
@@ -87,9 +88,13 @@ export async function getIncome(id: string): Promise<Income> {
 
 export async function createIncome(
   input: CreateIncomeInput,
-  options: { id?: string } = {},
+  options: CreateOptions = {},
 ): Promise<Income> {
   const spreadsheetId = await getSpreadsheetId();
+  if (options.id && options.ifAbsent) {
+    const existing = await incomeRepo.findById(spreadsheetId, options.id);
+    if (existing) return existing;
+  }
   const now = new Date().toISOString();
   const income: Income = {
     id: options.id ?? generateId(),

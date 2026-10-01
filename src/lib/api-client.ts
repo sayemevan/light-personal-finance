@@ -1,7 +1,9 @@
 import { toast } from "sonner";
 
 import {
+  IDEMPOTENCY_HEADER,
   enqueue,
+  generateTempId,
   isNetworkError,
   isOffline,
   isQueueable,
@@ -39,20 +41,29 @@ export async function apiFetch<T>(
     isQueueable(method, path) &&
     (init?.body === undefined || typeof init.body === "string");
 
+  // Creates carry an idempotency key from the start. If the connection drops
+  // after the server saved the record, the queued replay reuses the key and
+  // the server returns that record instead of creating a second one.
+  const tempId = queueable && method === "POST" ? generateTempId() : undefined;
+
   if (queueable && isOffline()) {
-    const placeholder = queueOffline<T>(method, path, init?.body);
+    const placeholder = queueOffline<T>(method, path, init?.body, tempId);
     if (placeholder.queued) return placeholder.value;
   }
 
   let res: Response;
   try {
     res = await fetch(path, {
-      headers: { "Content-Type": "application/json", ...init?.headers },
       ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(tempId ? { [IDEMPOTENCY_HEADER]: tempId } : {}),
+        ...init?.headers,
+      },
     });
   } catch (error) {
     if (queueable && isNetworkError(error)) {
-      const placeholder = queueOffline<T>(method, path, init?.body);
+      const placeholder = queueOffline<T>(method, path, init?.body, tempId);
       if (placeholder.queued) return placeholder.value;
     }
     throw error;
@@ -86,9 +97,10 @@ function queueOffline<T>(
   method: string,
   path: string,
   body: BodyInit | null | undefined,
+  tempId?: string,
 ): { queued: true; value: T } | { queued: false } {
   const text = typeof body === "string" ? body : undefined;
-  const item = enqueue(method as QueuedMethod, path, text);
+  const item = enqueue(method as QueuedMethod, path, text, tempId);
   if (!item) return { queued: false };
 
   toast.info("Saved offline — will sync when you're back online");

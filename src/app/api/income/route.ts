@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api-response";
 import { requireSession } from "@/lib/auth/session";
+import { createOptions } from "@/lib/idempotency";
 import { createIncomeSchema, incomeListQuerySchema } from "@/lib/schemas";
 import { createIncome, listIncome } from "@/lib/services/income.service";
 
@@ -21,7 +22,7 @@ export async function POST(req: NextRequest) {
   try {
     await requireSession();
     const input = createIncomeSchema.parse(await req.json());
-    return ok(await createIncome(input), { status: 201 });
+    return ok(await createIncome(input, createOptions(req)), { status: 201 });
   } catch (error) {
     return fail(error);
   }

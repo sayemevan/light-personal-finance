@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { ok, fail } from "@/lib/api-response";
 import { requireSession } from "@/lib/auth/session";
+import { createOptions } from "@/lib/idempotency";
 import { createTransferSchema, paginationQuerySchema } from "@/lib/schemas";
 import { createTransfer, listTransfers } from "@/lib/services/transfer.service";
 
@@ -26,7 +27,9 @@ export async function POST(req: NextRequest) {
   try {
     await requireSession();
     const input = createTransferSchema.parse(await req.json());
-    return ok(await createTransfer(input), { status: 201 });
+    return ok(await createTransfer(input, createOptions(req)), {
+      status: 201,
+    });
   } catch (error) {
     return fail(error);
   }

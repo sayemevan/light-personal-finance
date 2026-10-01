@@ -7,10 +7,15 @@ import { WifiOff } from "lucide-react";
 
 import {
   OFFLINE_QUEUE_EVENT,
+  claimOfflineData,
   describeQueued,
   flushQueue,
   queueSize,
 } from "@/lib/offline-queue";
+import { clearOfflineData } from "@/lib/pwa";
+
+/** Retry interval while writes are waiting and the device seems online. */
+const RETRY_MS = 30_000;
 
 function subscribeOnline(callback: () => void) {
   window.addEventListener("online", callback);
@@ -31,10 +36,15 @@ function subscribeQueue(callback: () => void) {
 }
 
 /**
- * Replays writes queued while offline (on app start and whenever the device
- * comes back online) and shows a slim "You're offline" banner meanwhile.
+ * Replays writes queued while offline and shows a slim "You're offline"
+ * banner meanwhile. Sync runs on app start, when the device comes back
+ * online, when the tab becomes visible again, and every 30s while anything
+ * is still waiting (e.g. the server was down, which fires no event).
+ *
+ * `userId` is the signed-in user. Offline data left by a different user on
+ * this device is wiped before anything is replayed.
  */
-export function OfflineSync() {
+export function OfflineSync({ userId }: { userId: string }) {
   const queryClient = useQueryClient();
   const online = React.useSyncExternalStore(
     subscribeOnline,
@@ -46,6 +56,23 @@ export function OfflineSync() {
     queueSize,
     () => 0,
   );
+
+  const [ready, setReady] = React.useState(false);
+
+  // Claim the device's offline data for this user before any sync.
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (claimOfflineData(userId)) {
+        await clearOfflineData().catch(() => undefined);
+        await queryClient.invalidateQueries();
+      }
+      if (!cancelled) setReady(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, queryClient]);
 
   const sync = React.useCallback(async () => {
     if (queueSize() === 0) return;
@@ -68,10 +95,24 @@ export function OfflineSync() {
   }, [queryClient]);
 
   React.useEffect(() => {
+    if (!ready) return;
     void sync();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void sync();
+    };
     window.addEventListener("online", sync);
-    return () => window.removeEventListener("online", sync);
-  }, [sync]);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("online", sync);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [ready, sync]);
+
+  React.useEffect(() => {
+    if (!ready || !online || pending === 0) return;
+    const timer = window.setInterval(() => void sync(), RETRY_MS);
+    return () => window.clearInterval(timer);
+  }, [ready, online, pending, sync]);
 
   if (online) return null;
 
