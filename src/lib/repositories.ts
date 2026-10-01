@@ -254,6 +254,11 @@ const assetCodec: RowCodec<Asset> = {
     a.notes ?? "",
     a.createdAt,
     a.accountId ?? "",
+    a.status,
+    a.valuedAt ?? "",
+    a.saleDate ?? "",
+    a.saleValue ?? "",
+    a.saleAccountId ?? "",
   ],
   fromRow: (r) => ({
     id: cell.str(r[0]),
@@ -265,6 +270,12 @@ const assetCodec: RowCodec<Asset> = {
     notes: cell.optional(r[6]),
     createdAt: cell.str(r[7]),
     accountId: cell.optional(r[8]),
+    // Rows written before the status column existed are still owned.
+    status: cell.str(r[9]) === "sold" ? "sold" : "owned",
+    valuedAt: cell.optional(r[10]),
+    saleDate: cell.optional(r[11]),
+    saleValue: cell.optionalNum(r[12]),
+    saleAccountId: cell.optional(r[13]),
   }),
 };
 

@@ -47,6 +47,9 @@ export type AssetCategory =
   | "electronics"
   | "other";
 
+/** Whether an asset is still held, or has been sold / disposed of. */
+export type AssetStatus = "owned" | "sold";
+
 export interface Account {
   id: string;
   name: string;
@@ -278,6 +281,8 @@ export interface Asset {
   purchaseValue: number;
   /** Latest estimated value of the asset. */
   currentValue: number;
+  /** Date `currentValue` was last set; unknown for assets created before it. */
+  valuedAt?: ISODateString;
   /**
    * Optional account the money came from. When set, the purchase value is
    * deducted from that account's cash balance. When empty, the purchase is
@@ -286,7 +291,20 @@ export interface Asset {
   accountId?: string;
   notes?: string;
   createdAt: ISODateTimeString;
-  /** Derived, not persisted: currentValue − purchaseValue. */
+  status: AssetStatus;
+  /** Set when sold. */
+  saleDate?: ISODateString;
+  /** Amount received when sold (0 for a write-off). */
+  saleValue?: number;
+  /**
+   * Optional account the sale proceeds went to. When set, the sale value is
+   * added to that account's cash balance.
+   */
+  saleAccountId?: string;
+  /**
+   * Derived, not persisted: (saleValue when sold, else currentValue) −
+   * purchaseValue.
+   */
   gain?: number;
   /** Derived, not persisted: gain as a percentage of purchaseValue. */
   returnPct?: number;

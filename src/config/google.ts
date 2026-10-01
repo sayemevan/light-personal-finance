@@ -164,6 +164,11 @@ export const SHEET_COLUMNS = {
     "notes",
     "createdAt",
     "accountId",
+    "status",
+    "valuedAt",
+    "saleDate",
+    "saleValue",
+    "saleAccountId",
   ],
   [SHEET_TABS.transfers]: [
     "id",
@@ -214,4 +219,4 @@ export const SHEET_COLUMNS = {
 } as const;
 
 /** Bumped whenever the sheet schema changes; drives non-destructive migrations. */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;

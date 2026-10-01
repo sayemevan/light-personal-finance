@@ -208,7 +208,7 @@ export default function AccountsPage() {
         open={Boolean(deleting)}
         onOpenChange={(open) => !open && setDeleting(undefined)}
         title="Delete account?"
-        description="Transactions using this account will keep their reference. This cannot be undone."
+        description="Only an account with no transactions, loans, investments or assets can be deleted. This cannot be undone."
         confirmLabel="Delete"
         loading={deleteAccount.isPending}
         onConfirm={() =>

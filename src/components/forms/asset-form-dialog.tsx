@@ -34,13 +34,19 @@ interface AssetFormDialogProps {
   asset?: Asset;
 }
 
+/**
+ * Select value for "external source" (Radix Select can't hold ""). Without
+ * an explicit option, a linked account could never be unlinked again.
+ */
+const NO_ACCOUNT = "__none__";
+
 const emptyValues = (): CreateAssetInput => ({
   name: "",
   category: "house",
   purchaseDate: today(),
   purchaseValue: undefined as unknown as number,
   currentValue: undefined as unknown as number,
-  accountId: "",
+  accountId: NO_ACCOUNT,
   notes: "",
 });
 
@@ -50,7 +56,20 @@ export function AssetFormDialog({
   asset,
 }: AssetFormDialogProps) {
   const isEdit = Boolean(asset);
-  const { accountOptions } = useLookups();
+  const { accountOptions, accounts } = useLookups();
+  const paidFromOptions = React.useMemo(() => {
+    const list = [
+      { label: "External source (not tracked)", value: NO_ACCOUNT },
+      ...accountOptions,
+    ];
+    // Keep a linked account visible even if it has since been archived.
+    const linked = asset?.accountId;
+    if (linked && !accountOptions.some((o) => o.value === linked)) {
+      const account = accounts.find((a) => a.id === linked);
+      if (account) list.push({ label: account.name, value: account.id });
+    }
+    return list;
+  }, [accountOptions, accounts, asset?.accountId]);
   const createAsset = useCreateAsset();
   const updateAsset = useUpdateAsset();
 
@@ -69,7 +88,7 @@ export function AssetFormDialog({
             purchaseDate: asset.purchaseDate,
             purchaseValue: asset.purchaseValue,
             currentValue: asset.currentValue,
-            accountId: asset.accountId ?? "",
+            accountId: asset.accountId || NO_ACCOUNT,
             notes: asset.notes ?? "",
           }
         : emptyValues(),
@@ -79,6 +98,14 @@ export function AssetFormDialog({
 
   const onSubmit = (values: CreateAssetInput) => {
     const done = () => onOpenChange(false);
+    // The server stamps valuedAt only when currentValue changes; send the
+    // local date so it isn't the server's (UTC) day.
+    values = {
+      ...values,
+      valuedAt: today(),
+      // "" tells the server "external source" (and unlinks on edit).
+      accountId: values.accountId === NO_ACCOUNT ? "" : values.accountId,
+    };
     if (isEdit && asset) {
       updateAsset.mutate({ id: asset.id, input: values }, { onSuccess: done });
     } else {
@@ -137,9 +164,9 @@ export function AssetFormDialog({
               control={form.control}
               name="accountId"
               label="Paid from account"
-              placeholder="External source (not tracked)"
+              noneLabel="External source (not tracked)"
               description="Leave blank if funded from an untracked source. When set, the purchase value is deducted from that account."
-              options={accountOptions}
+              options={paidFromOptions}
             />
             <TextareaField
               control={form.control}

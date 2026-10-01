@@ -50,9 +50,10 @@ import { TagsTab } from "@/components/reports/tags-tab";
 import { ExportMenu } from "@/components/reports/export-menu";
 import "@/app/print.css";
 
-const CURRENT_YEAR = String(new Date().getFullYear());
 
 export default function ReportsPage() {
+  // Per render, not per module load: a tab left open over New Year moves on.
+  const CURRENT_YEAR = String(new Date().getFullYear());
   const [yearFilter, setYearFilter] = React.useState(ALL_VALUE);
   const selectedYear =
     yearFilter === ALL_VALUE ? CURRENT_YEAR : yearFilter;
@@ -327,6 +328,11 @@ export default function ReportsPage() {
                     <StatCard
                       title="Total change"
                       value={formatSigned(summary.totalGain, currency)}
+                      hint={
+                        summary.soldCount > 0
+                          ? `${formatSigned(summary.realizedGain, currency)} realized on ${summary.soldCount} sold`
+                          : undefined
+                      }
                     />
                     <StatCard
                       title="Overall change"

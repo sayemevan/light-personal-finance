@@ -96,7 +96,7 @@ export interface AccountFlows {
 /**
  * Inflow and outflow for an account:
  *   in:  income, borrowed principal received, loan repayments received,
- *        investment income, transfers in
+ *        investment income, asset sale proceeds, transfers in
  *   out: expenses, investment/asset purchases funded from it, principal lent
  *        out, loan repayments made, transfers out
  * Repayments use the payment's own account when set, otherwise the loan's.
@@ -134,6 +134,12 @@ export function computeAccountFlows(
     ) +
     receiptsIn +
     sumInvestmentIncomeForAccount(accountId, investmentTransactions) +
+    sumBy(
+      assets.filter(
+        (a) => a.status === "sold" && a.saleAccountId === accountId,
+      ),
+      (a) => a.saleValue ?? 0,
+    ) +
     sumBy(
       transfers.filter((t) => t.toAccountId === accountId),
       (t) => t.amount,
@@ -242,14 +248,50 @@ export function computeInvestmentReturnPct(
   );
 }
 
-/** Absolute gain/loss on an asset: current value − purchase value. */
+/**
+ * What an asset is worth for gain purposes: the sale value once sold
+ * (realized), otherwise the latest estimate (unrealized).
+ */
+export function assetValue(asset: Asset): number {
+  return asset.status === "sold" ? (asset.saleValue ?? 0) : asset.currentValue;
+}
+
+/** Absolute gain/loss on an asset: value (sale or current) − purchase value. */
 export function computeAssetGain(asset: Asset): number {
-  return computeGain(asset.currentValue, asset.purchaseValue);
+  return computeGain(assetValue(asset), asset.purchaseValue);
 }
 
 /** Asset gain expressed as a percentage of the purchase value. */
 export function computeAssetReturnPct(asset: Asset): number {
-  return computeReturnPct(asset.currentValue, asset.purchaseValue);
+  return computeReturnPct(assetValue(asset), asset.purchaseValue);
+}
+
+/** Current value of the assets still held; sold ones are no longer owned. */
+export function sumOwnedAssetValue(assets: Asset[]): number {
+  return sumBy(
+    assets.filter((a) => a.status !== "sold"),
+    (a) => a.currentValue,
+  );
+}
+
+export interface AssetTotals {
+  totalPurchase: number;
+  /** Sum of `assetValue`: current value if held, sale value if sold. */
+  totalValue: number;
+  totalGain: number;
+  returnPct: number;
+}
+
+/** Purchase, value and gain totals for a set of assets. */
+export function summarizeAssets(assets: Asset[]): AssetTotals {
+  const totalPurchase = sumBy(assets, (a) => a.purchaseValue);
+  const totalValue = sumBy(assets, assetValue);
+  return {
+    totalPurchase: Number(totalPurchase.toFixed(2)),
+    totalValue: Number(totalValue.toFixed(2)),
+    totalGain: computeGain(totalValue, totalPurchase),
+    returnPct: computeReturnPct(totalValue, totalPurchase),
+  };
 }
 
 /** Build an income/expense series for the last `months` calendar months. */

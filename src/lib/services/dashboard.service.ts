@@ -8,6 +8,7 @@ import {
   computeNetWorth,
   effectiveLoanStatus,
   monthKey,
+  sumOwnedAssetValue,
 } from "@/lib/finance";
 import type { DashboardSummary, Transaction } from "@/types/domain";
 
@@ -34,10 +35,7 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
     0,
   );
 
-  const assetValue = assets.reduce(
-    (sum, asset) => sum + asset.currentValue,
-    0,
-  );
+  const assetValue = sumOwnedAssetValue(assets);
 
   // Overdue loans are still owed, so count every loan that isn't settled.
   const { outstandingBorrowed, outstandingLent } = computeLoanTotals(

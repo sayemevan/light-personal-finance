@@ -6,7 +6,7 @@ import { api } from "@/lib/api-client";
 import { queryKeys, derivedKeys } from "@/hooks/keys";
 import { useCrudMutation } from "@/hooks/use-crud-mutation";
 import type { Asset } from "@/types/domain";
-import type { CreateAssetInput } from "@/lib/schemas";
+import type { CreateAssetInput, SellAssetInput } from "@/lib/schemas";
 
 const INVALIDATE = [queryKeys.assets, ...derivedKeys] as const;
 
@@ -29,6 +29,21 @@ export function useUpdateAsset() {
     ({ id, input }: { id: string; input: Partial<CreateAssetInput> }) =>
       api.patch<Asset>(`/api/assets/${id}`, input),
     { successMessage: "Asset updated.", invalidate: INVALIDATE },
+  );
+}
+
+export function useSellAsset() {
+  return useCrudMutation(
+    ({ id, input }: { id: string; input: SellAssetInput }) =>
+      api.post<Asset>(`/api/assets/${id}/sale`, input),
+    { successMessage: "Asset marked as sold.", invalidate: INVALIDATE },
+  );
+}
+
+export function useUndoAssetSale() {
+  return useCrudMutation(
+    (id: string) => api.delete<Asset>(`/api/assets/${id}/sale`),
+    { successMessage: "Sale undone.", invalidate: INVALIDATE },
   );
 }
 

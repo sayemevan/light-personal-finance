@@ -169,6 +169,9 @@ export function TextareaField<T extends FieldValues>({
   );
 }
 
+// Radix Select can't use "" as an item value.
+const NONE_VALUE = "__none__";
+
 export function SelectField<T extends FieldValues>({
   control,
   name,
@@ -176,7 +179,12 @@ export function SelectField<T extends FieldValues>({
   placeholder,
   description,
   options,
-}: BaseFieldProps<T> & { options: { label: string; value: string }[] }) {
+  noneLabel,
+}: BaseFieldProps<T> & {
+  options: { label: string; value: string }[];
+  /** Adds a first option that sets the field back to "" (e.g. "External"). */
+  noneLabel?: string;
+}) {
   return (
     <FormField
       control={control}
@@ -185,8 +193,12 @@ export function SelectField<T extends FieldValues>({
         <FormItem>
           <FormLabel>{label}</FormLabel>
           <Select
-            onValueChange={field.onChange}
-            value={field.value ?? ""}
+            onValueChange={(value) =>
+              field.onChange(value === NONE_VALUE ? "" : value)
+            }
+            value={
+              noneLabel && !field.value ? NONE_VALUE : (field.value ?? "")
+            }
           >
             <FormControl>
               <SelectTrigger>
@@ -194,6 +206,9 @@ export function SelectField<T extends FieldValues>({
               </SelectTrigger>
             </FormControl>
             <SelectContent>
+              {noneLabel ? (
+                <SelectItem value={NONE_VALUE}>{noneLabel}</SelectItem>
+              ) : null}
               {options.map((option) => (
                 <SelectItem key={option.value} value={option.value}>
                   {option.label}

@@ -51,6 +51,9 @@ export interface AssetSummary {
   currentValue: number;
   totalGain: number;
   returnPct: number;
+  /** Sale value − purchase value, summed over sold assets. */
+  realizedGain: number;
+  soldCount: number;
   byCategory: AssetSummaryRow[];
 }
 

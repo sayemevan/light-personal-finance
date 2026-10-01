@@ -1,14 +1,28 @@
 "use client";
 
 import * as React from "react";
-import { Boxes, Plus, TrendingDown, TrendingUp, Wallet } from "lucide-react";
+import {
+  Boxes,
+  HandCoins,
+  Plus,
+  TrendingDown,
+  TrendingUp,
+  Undo2,
+  Wallet,
+} from "lucide-react";
 
-import { useAssets, useDeleteAsset } from "@/hooks/use-assets";
+import {
+  useAssets,
+  useDeleteAsset,
+  useUndoAssetSale,
+} from "@/hooks/use-assets";
 import { useLookups } from "@/hooks/use-lookups";
 import { useCurrency } from "@/hooks/use-settings";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { summarizeAssets } from "@/lib/finance";
+import { addDays, todayISO } from "@/lib/recurring";
 import { ASSET_CATEGORY_LABELS, ASSET_CATEGORY_OPTIONS } from "@/lib/labels";
-import type { Asset } from "@/types/domain";
+import type { Asset, AssetStatus } from "@/types/domain";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
@@ -23,7 +37,17 @@ import {
 import { FilterSelect, ALL_VALUE } from "@/components/shared/filter-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { AssetFormDialog } from "@/components/forms/asset-form-dialog";
+import { AssetSellDialog } from "@/components/forms/asset-sell-dialog";
+
+const STATUS_OPTIONS: { label: string; value: AssetStatus }[] = [
+  { label: "Owned", value: "owned" },
+  { label: "Sold", value: "sold" },
+];
+
+/** Estimates older than this are flagged as due for a refresh. */
+const STALE_VALUATION_DAYS = 365;
 
 function formatPercent(value: number): string {
   const sign = value > 0 ? "+" : "";
@@ -35,11 +59,15 @@ export default function AssetsPage() {
   const { accountName } = useLookups();
   const currency = useCurrency();
   const deleteAsset = useDeleteAsset();
+  const { mutate: undoSale } = useUndoAssetSale();
 
   const [formOpen, setFormOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<Asset | undefined>();
   const [deleting, setDeleting] = React.useState<Asset | undefined>();
+  const [selling, setSelling] = React.useState<Asset | undefined>();
   const [categoryFilter, setCategoryFilter] = React.useState(ALL_VALUE);
+  const [statusFilter, setStatusFilter] = React.useState<string>("owned");
+  const staleBefore = addDays(todayISO(), -STALE_VALUATION_DAYS);
 
   const openCreate = () => {
     setEditing(undefined);
@@ -55,7 +83,12 @@ export default function AssetsPage() {
       {
         id: "name",
         header: "Name",
-        cell: (row) => <span className="font-medium">{row.name}</span>,
+        cell: (row) => (
+          <span className="inline-flex items-center gap-2">
+            <span className="font-medium">{row.name}</span>
+            {row.status === "sold" ? <Badge variant="outline">Sold</Badge> : null}
+          </span>
+        ),
         sortValue: (row) => row.name,
         searchValue: (row) => row.name,
       },
@@ -81,14 +114,41 @@ export default function AssetsPage() {
       {
         id: "value",
         mobile: "trailing",
-        header: "Current value",
+        header: "Value",
         align: "right",
-        cell: (row) => (
-          <span className="font-medium">
-            {formatCurrency(row.currentValue, currency)}
-          </span>
-        ),
-        sortValue: (row) => row.currentValue,
+        cell: (row) => {
+          const value =
+            row.status === "sold" ? (row.saleValue ?? 0) : row.currentValue;
+          return (
+            <span className="font-medium">{formatCurrency(value, currency)}</span>
+          );
+        },
+        sortValue: (row) =>
+          row.status === "sold" ? (row.saleValue ?? 0) : row.currentValue,
+      },
+      {
+        id: "valued",
+        mobile: "hidden",
+        header: "Valued",
+        cell: (row) => {
+          if (row.status === "sold") {
+            return row.saleDate ? `Sold ${formatDate(row.saleDate)}` : "Sold";
+          }
+          if (!row.valuedAt) {
+            return <span className="text-muted-foreground">—</span>;
+          }
+          const stale = row.valuedAt < staleBefore;
+          return (
+            <span
+              className={cn(stale && "text-amber-600 dark:text-amber-400")}
+              title={stale ? "Over a year old. Update the estimate." : undefined}
+            >
+              {formatDate(row.valuedAt)}
+            </span>
+          );
+        },
+        sortValue: (row) =>
+          (row.status === "sold" ? row.saleDate : row.valuedAt) ?? "",
       },
       {
         id: "gain",
@@ -141,11 +201,23 @@ export default function AssetsPage() {
           <RowActions
             onEdit={() => openEdit(row)}
             onDelete={() => setDeleting(row)}
-          />
+          >
+            {row.status === "sold" ? (
+              <DropdownMenuItem onClick={() => undoSale(row.id)}>
+                <Undo2 className="h-4 w-4" />
+                Undo sale
+              </DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem onClick={() => setSelling(row)}>
+                <HandCoins className="h-4 w-4" />
+                Mark as sold
+              </DropdownMenuItem>
+            )}
+          </RowActions>
         ),
       },
     ],
-    [currency, accountName],
+    [currency, accountName, staleBefore, undoSale],
   );
 
   return (
@@ -171,28 +243,46 @@ export default function AssetsPage() {
               }
             />
           ) : (
-            <div className="space-y-6">
-              <AssetSummary assets={assets} currency={currency} />
-              <DataTable
-                data={assets.filter(
-                  (asset) =>
-                    categoryFilter === ALL_VALUE ||
-                    asset.category === categoryFilter,
-                )}
-                columns={columns}
-                getRowId={(row) => row.id}
-                searchPlaceholder="Search assets…"
-                onRowClick={openEdit}
-                toolbar={
-                  <FilterSelect
-                    value={categoryFilter}
-                    onChange={setCategoryFilter}
-                    options={ASSET_CATEGORY_OPTIONS}
-                    allLabel="All categories"
+            (() => {
+              const visible = assets.filter(
+                (asset) =>
+                  (categoryFilter === ALL_VALUE ||
+                    asset.category === categoryFilter) &&
+                  (statusFilter === ALL_VALUE || asset.status === statusFilter),
+              );
+              return (
+                <div className="space-y-6">
+                  <AssetSummary
+                    assets={visible}
+                    status={statusFilter}
+                    currency={currency}
                   />
-                }
-              />
-            </div>
+                  <DataTable
+                    data={visible}
+                    columns={columns}
+                    getRowId={(row) => row.id}
+                    searchPlaceholder="Search assets…"
+                    onRowClick={openEdit}
+                    toolbar={
+                      <>
+                        <FilterSelect
+                          value={statusFilter}
+                          onChange={setStatusFilter}
+                          options={STATUS_OPTIONS}
+                          allLabel="Owned & sold"
+                        />
+                        <FilterSelect
+                          value={categoryFilter}
+                          onChange={setCategoryFilter}
+                          options={ASSET_CATEGORY_OPTIONS}
+                          allLabel="All categories"
+                        />
+                      </>
+                    }
+                  />
+                </div>
+              );
+            })()
           )
         }
       </QueryView>
@@ -202,11 +292,16 @@ export default function AssetsPage() {
         onOpenChange={setFormOpen}
         asset={editing}
       />
+      <AssetSellDialog
+        open={Boolean(selling)}
+        onOpenChange={(open) => !open && setSelling(undefined)}
+        asset={selling}
+      />
       <ConfirmDialog
         open={Boolean(deleting)}
         onOpenChange={(open) => !open && setDeleting(undefined)}
         title="Delete asset?"
-        description="This will remove the asset from your tracker. This cannot be undone."
+        description={deleting ? deleteWarning(deleting, accountName) : undefined}
         confirmLabel="Delete"
         loading={deleteAsset.isPending}
         onConfirm={() =>
@@ -220,18 +315,47 @@ export default function AssetsPage() {
   );
 }
 
+/** Spell out how deleting changes account balances, and point to "sold". */
+function deleteWarning(
+  asset: Asset,
+  accountName: (id: string) => string,
+): string {
+  const effects: string[] = [];
+  if (asset.accountId) {
+    effects.push(
+      `the purchase is no longer deducted from ${accountName(asset.accountId)}, so its balance goes up`,
+    );
+  }
+  if (asset.status === "sold" && asset.saleAccountId) {
+    effects.push(
+      `the sale proceeds are removed from ${accountName(asset.saleAccountId)}`,
+    );
+  }
+  const balance =
+    effects.length > 0 ? ` Its account balances change too: ${effects.join("; ")}.` : "";
+  const sell =
+    asset.status === "sold" ? "" : ' If you sold it, use "Mark as sold" instead.';
+  return `This removes ${asset.name} from your tracker.${balance}${sell} This cannot be undone.`;
+}
+
 function AssetSummary({
   assets,
+  status,
   currency,
 }: {
   assets: Asset[];
+  status: string;
   currency: string;
 }) {
-  const totalPurchase = assets.reduce((sum, a) => sum + a.purchaseValue, 0);
-  const totalValue = assets.reduce((sum, a) => sum + a.currentValue, 0);
-  const totalGain = totalValue - totalPurchase;
-  const returnPct = totalPurchase > 0 ? (totalGain / totalPurchase) * 100 : 0;
+  const { totalPurchase, totalValue, totalGain, returnPct } =
+    summarizeAssets(assets);
   const positive = totalGain >= 0;
+  const valueTitle =
+    status === "owned"
+      ? "Current value"
+      : status === "sold"
+        ? "Sale proceeds"
+        : "Current value + proceeds";
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -241,12 +365,12 @@ function AssetSummary({
         icon={Wallet}
       />
       <StatCard
-        title="Current value"
+        title={valueTitle}
         value={formatCurrency(totalValue, currency)}
         icon={Boxes}
       />
       <StatCard
-        title="Total change"
+        title={status === "sold" ? "Realized gain" : "Total change"}
         value={`${positive ? "+" : ""}${formatCurrency(totalGain, currency)}`}
         hint={`${positive ? "+" : ""}${returnPct.toFixed(2)}% vs purchase`}
         icon={positive ? TrendingUp : TrendingDown}

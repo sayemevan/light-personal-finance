@@ -302,10 +302,18 @@ export const createAssetSchema = z.object({
   purchaseDate: isoDate,
   purchaseValue: amount,
   currentValue: nonNegativeAmount,
+  /** Client's local date, used when currentValue is (re)set. */
+  valuedAt: isoDate.optional(),
   accountId: z.string().optional(),
   notes: optionalText,
 });
 export const updateAssetSchema = createAssetSchema.partial();
+
+export const sellAssetSchema = z.object({
+  saleDate: isoDate,
+  saleValue: nonNegativeAmount,
+  saleAccountId: z.string().optional(),
+});
 
 export const listQuerySchema = z.object({
   from: isoDate.optional(),
@@ -322,7 +330,8 @@ export const yearSchema = z
     z.literal("live"),
     z.string().regex(/^\d{4}$/, "Expected a year in YYYY format"),
   ])
-  .default(String(new Date().getFullYear()));
+  // A function, so it is evaluated per request, not once at server start.
+  .default(() => String(new Date().getFullYear()));
 
 export const reportYearQuerySchema = z.object({
   year: yearSchema,
@@ -375,6 +384,7 @@ export type CreateInvestmentTransactionInput = z.infer<
 >;
 export type CreateInvestmentInput = z.infer<typeof createInvestmentSchema>;
 export type CreateAssetInput = z.infer<typeof createAssetSchema>;
+export type SellAssetInput = z.infer<typeof sellAssetSchema>;
 export type ListQuery = z.infer<typeof listQuerySchema>;
 export type PaginationQuery = z.infer<typeof paginationQuerySchema>;
 export type ExpenseListQuery = z.infer<typeof expenseListQuerySchema>;

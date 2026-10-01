@@ -16,6 +16,7 @@ import {
   computeAccountFlows,
   computeLoanTotals,
   sumInvestmentIncome,
+  summarizeAssets,
 } from "@/lib/finance";
 import { loadLedger } from "@/lib/services/ledger.service";
 import {
@@ -188,15 +189,13 @@ export async function getInvestmentSummary(): Promise<InvestmentSummary> {
 export async function getAssetSummary(): Promise<AssetSummary> {
   const spreadsheetId = await getSpreadsheetId();
   const assets = await assetsRepo.list(spreadsheetId);
+  // Holdings are what's still owned; sold assets only contribute their
+  // realized gain.
+  const owned = assets.filter((asset) => asset.status !== "sold");
+  const sold = assets.filter((asset) => asset.status === "sold");
 
   const byCategory = new Map<AssetCategory, AssetSummaryRow>();
-  let totalPurchase = 0;
-  let currentValue = 0;
-
-  for (const asset of assets) {
-    totalPurchase += asset.purchaseValue;
-    currentValue += asset.currentValue;
-
+  for (const asset of owned) {
     const row = byCategory.get(asset.category) ?? {
       key: asset.category,
       label: ASSET_CATEGORY_LABELS[asset.category],
@@ -210,12 +209,14 @@ export async function getAssetSummary(): Promise<AssetSummary> {
     byCategory.set(asset.category, row);
   }
 
-  const totalGain = round2(currentValue - totalPurchase);
+  const totals = summarizeAssets(owned);
   return {
-    totalPurchase: round2(totalPurchase),
-    currentValue: round2(currentValue),
-    totalGain,
-    returnPct: totalPurchase > 0 ? round2((totalGain / totalPurchase) * 100) : 0,
+    totalPurchase: totals.totalPurchase,
+    currentValue: totals.totalValue,
+    totalGain: totals.totalGain,
+    returnPct: totals.returnPct,
+    realizedGain: summarizeAssets(sold).totalGain,
+    soldCount: sold.length,
     byCategory: [...byCategory.values()]
       .map((row) => ({ ...row, purchaseValue: round2(row.purchaseValue), currentValue: round2(row.currentValue) }))
       .sort((a, b) => b.currentValue - a.currentValue),
