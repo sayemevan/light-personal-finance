@@ -73,27 +73,62 @@ export async function ensureFinanceWorkspace(): Promise<FinanceWorkspace> {
  */
 async function ensureSheetTabs(spreadsheetId: string): Promise<void> {
   const sheets = await getSheetsClient();
-  const meta = await sheets.spreadsheets.get({
-    spreadsheetId,
-    fields: "sheets.properties.title",
-  });
-  const existing = new Set(
-    (meta.data.sheets ?? [])
-      .map((sheet) => sheet.properties?.title)
-      .filter((title): title is string => Boolean(title)),
-  );
+  const titles = async () => {
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId,
+      fields: "sheets.properties(sheetId,title)",
+    });
+    return (meta.data.sheets ?? [])
+      .map((sheet) => sheet.properties)
+      .filter(
+        (props): props is { sheetId: number; title: string } =>
+          typeof props?.sheetId === "number" && Boolean(props?.title),
+      );
+  };
 
-  const missing = Object.values(SHEET_TABS).filter(
-    (tab) => !existing.has(tab),
-  );
-  if (missing.length === 0) return;
+  const tabs = Object.values(SHEET_TABS);
+  const existing = new Set((await titles()).map((tab) => tab.title));
+  const missing = tabs.filter((tab) => !existing.has(tab));
 
-  await sheets.spreadsheets.batchUpdate({
-    spreadsheetId,
-    requestBody: {
-      requests: missing.map((title) => ({ addSheet: { properties: { title } } })),
-    },
-  });
+  // Several instances may migrate at once. One request per tab, so a tab
+  // another instance just added ("already exists") doesn't fail the others.
+  for (const title of missing) {
+    try {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: { requests: [{ addSheet: { properties: { title } } }] },
+      });
+    } catch (error) {
+      if (!(error instanceof Error && /already exists/i.test(error.message))) {
+        throw error;
+      }
+    }
+  }
+
+  // Simultaneous addSheet calls don't fail: Sheets keeps all of them and
+  // renames the extras "<title>_conflict<n>". Remove those while empty.
+  const conflicts = (await titles()).filter((tab) =>
+    tabs.some((title) => tab.title.startsWith(`${title}_conflict`)),
+  );
+  if (conflicts.length > 0) {
+    const data = await sheets.spreadsheets.values.batchGet({
+      spreadsheetId,
+      ranges: conflicts.map((tab) => `'${tab.title}'!A2:A`),
+    });
+    const empty = conflicts.filter(
+      (_tab, i) => !(data.data.valueRanges?.[i]?.values?.length ?? 0),
+    );
+    if (empty.length > 0) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: empty.map((tab) => ({
+            deleteSheet: { sheetId: tab.sheetId },
+          })),
+        },
+      });
+    }
+  }
 
   const hasColumns = (tab: string): tab is keyof typeof SHEET_COLUMNS =>
     tab in SHEET_COLUMNS;

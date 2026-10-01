@@ -9,7 +9,7 @@ import {
   transfersRepo,
 } from "@/lib/repositories";
 import { getSpreadsheetId } from "@/lib/google/workspace";
-import { withSpreadsheetLock } from "@/lib/google/lock";
+import { withLocalLock } from "@/lib/google/lock";
 import { createExpense } from "@/lib/services/expense.service";
 import { createIncome } from "@/lib/services/income.service";
 import { createTransfer } from "@/lib/services/transfer.service";
@@ -52,21 +52,19 @@ export interface RunDueResult {
 // ---------------------------------------------------------------------------
 
 /**
- * Every operation that posts occurrences or moves `nextDate` holds this lock,
- * which works across server instances (see `@/lib/google/lock`). Two tabs or
- * devices running at once can't post the same occurrence twice: the second
- * waits, re-reads the rule and finds it handled.
+ * Operations that post occurrences or move `nextDate` run one at a time per
+ * spreadsheet within this server instance: the second waits, re-reads the
+ * rule and finds it handled. Across instances, deterministic transaction ids
+ * plus `dedupePosted` make a doubly posted occurrence collapse to one row.
  */
 function withLock<T>(spreadsheetId: string, fn: () => Promise<T>): Promise<T> {
-  return withSpreadsheetLock(spreadsheetId, "recurring", fn, {
-    ttlMs: 2 * 60_000,
-  });
+  return withLocalLock(`${spreadsheetId}:recurring`, fn);
 }
 
 /**
- * Id of the transaction an occurrence creates. Deterministic, so if posting
- * succeeded but advancing `nextDate` failed, the retry sees it already exists
- * instead of posting it again.
+ * Id of the transaction an occurrence creates. Deterministic, so a retry (or
+ * a concurrent run on another instance) recognises an occurrence that was
+ * already posted.
  */
 export function occurrenceId(ruleId: string, occurrence: string): string {
   return `rec_${ruleId}_${occurrence}`;
@@ -92,6 +90,23 @@ function postedIds(
     cache.set(kind, ids);
   }
   return ids;
+}
+
+/**
+ * Two instances can both see an occurrence as unposted and both write it.
+ * The ids are identical, so drop every copy but the first.
+ */
+async function dedupePosted(
+  spreadsheetId: string,
+  posted: { kind: RecurringKind; id: string }[],
+): Promise<void> {
+  const ids = (kind: RecurringKind) =>
+    new Set(posted.filter((p) => p.kind === kind).map((p) => p.id));
+  await Promise.all([
+    expensesRepo.keepFirstOf(spreadsheetId, ids("expense")),
+    incomeRepo.keepFirstOf(spreadsheetId, ids("income")),
+    transfersRepo.keepFirstOf(spreadsheetId, ids("transfer")),
+  ]);
 }
 
 // ---------------------------------------------------------------------------
@@ -287,14 +302,14 @@ export async function postOccurrence(
   rule: RecurringRule,
   occurrence: string,
   options: { date?: string; amount?: number; posted?: PostedIds } = {},
-): Promise<void> {
+): Promise<string> {
   const id = occurrenceId(rule.id, occurrence);
   const posted = await postedIds(
     spreadsheetId,
     rule.kind,
     options.posted ?? new Map(),
   );
-  if (posted.has(id)) return;
+  if (posted.has(id)) return id;
 
   const date = options.date ?? occurrence;
   const amount = options.amount ?? rule.amount;
@@ -317,7 +332,7 @@ export async function postOccurrence(
         },
         { id },
       );
-      return;
+      return id;
     case "income":
       if (!rule.categoryId) throw AppError.validation("Select a category.");
       await createIncome(
@@ -330,7 +345,7 @@ export async function postOccurrence(
         },
         { id },
       );
-      return;
+      return id;
     case "transfer":
       if (!rule.toAccountId) throw AppError.validation("Select an account.");
       await createTransfer(
@@ -343,7 +358,7 @@ export async function postOccurrence(
         },
         { id },
       );
-      return;
+      return id;
   }
 }
 
@@ -393,6 +408,7 @@ export async function runDueRules(today: string): Promise<RunDueResult> {
   return withLock(spreadsheetId, async () => {
     const rules = await recurringRepo.list(spreadsheetId);
     const postedCache: PostedIds = new Map();
+    const postedNow: { kind: RecurringKind; id: string }[] = [];
     let posted = 0;
     const pending: PendingOccurrence[] = [];
 
@@ -424,7 +440,10 @@ export async function runDueRules(today: string): Promise<RunDueResult> {
       let lastPosted: string | undefined;
       try {
         for (const date of due) {
-          await postOccurrence(spreadsheetId, rule, date, { posted: postedCache });
+          const id = await postOccurrence(spreadsheetId, rule, date, {
+            posted: postedCache,
+          });
+          postedNow.push({ kind: rule.kind, id });
           lastPosted = date;
           posted += 1;
         }
@@ -441,6 +460,7 @@ export async function runDueRules(today: string): Promise<RunDueResult> {
       }
     }
 
+    await dedupePosted(spreadsheetId, postedNow);
     pending.sort((a, b) => a.date.localeCompare(b.date));
     return { posted, pending };
   });
@@ -466,10 +486,11 @@ export async function confirmOccurrence(
     if (!withinEnd(rule, rule.nextDate)) {
       throw AppError.validation("This schedule has already ended.");
     }
-    await postOccurrence(spreadsheetId, rule, input.date, {
+    const id = await postOccurrence(spreadsheetId, rule, input.date, {
       date: input.date > today ? today : input.date,
       amount: input.amount ?? rule.amount,
     });
+    await dedupePosted(spreadsheetId, [{ kind: rule.kind, id }]);
     return recurringRepo.update(spreadsheetId, ruleId, advancedPatch(rule, rule.nextDate));
   });
 }

@@ -1,7 +1,6 @@
 import "server-only";
 import { getSheetsClient } from "@/lib/google/client";
 import { AppError } from "@/lib/errors";
-import { withSpreadsheetLock } from "@/lib/google/lock";
 
 /** Cell primitives Google Sheets accepts on write. */
 export type Cell = string | number | boolean;
@@ -60,21 +59,6 @@ function markWritten(spreadsheetId: string): void {
   writeGeneration.set(spreadsheetId, spreadsheetGeneration(spreadsheetId) + 1);
 }
 
-/**
- * Lock held around anything that locates a row by position and then writes or
- * deletes it. Row deletions shift every row below, so without it a concurrent
- * delete can make an update or delete land on a different record.
- */
-export const ROWS_LOCK = "rows";
-
-export function withRowsLock<T>(
-  spreadsheetId: string,
-  fn: () => Promise<T>,
-  options?: { ttlMs?: number; waitMs?: number },
-): Promise<T> {
-  return withSpreadsheetLock(spreadsheetId, ROWS_LOCK, fn, options);
-}
-
 /** Typed cell for `appendCells`; never parsed, so text can't become a formula. */
 function toCellData(value: Cell) {
   if (typeof value === "number") return { userEnteredValue: { numberValue: value } };
@@ -118,6 +102,13 @@ async function getSheetId(
  * Generic data-access object for a single worksheet whose first column is the
  * record id. All module services are built on top of this so the row-plumbing
  * lives in exactly one place.
+ *
+ * Rows never move. Deleting a record blanks its row instead of removing it
+ * (blank rows are skipped on read) and new rows are added after the last
+ * non-empty row, so a row number found by one request stays valid while other
+ * requests write concurrently, even on other server instances. Physically
+ * deleting rows would shift everything below and make concurrent edits land
+ * on the wrong record.
  */
 export class SheetRepository<T extends { id: string }> {
   private readonly lastColumn: string;
@@ -165,85 +156,85 @@ export class SheetRepository<T extends { id: string }> {
     return entity;
   }
 
+  /**
+   * Add rows after the last non-empty row. `appendCells` (unlike
+   * `values.append`, whose table detection can stop at a blank row and insert
+   * mid-sheet) never shifts existing rows. Cells are typed, never parsed, so
+   * text like "=..." or "+880..." is stored exactly as entered.
+   */
   async appendMany(spreadsheetId: string, entities: T[]): Promise<void> {
     if (entities.length === 0) return;
-    markWritten(spreadsheetId);
+    const sheetId = await getSheetId(spreadsheetId, this.tab);
     const sheets = await getSheetsClient();
-    await sheets.spreadsheets.values.append({
+    markWritten(spreadsheetId);
+    await sheets.spreadsheets.batchUpdate({
       spreadsheetId,
-      range: `${this.tab}!A1`,
-      valueInputOption: "USER_ENTERED",
-      insertDataOption: "INSERT_ROWS",
-      requestBody: { values: entities.map((entity) => this.codec.toRow(entity)) },
+      requestBody: { requests: [this.appendCellsRequest(sheetId, entities)] },
     });
     markWritten(spreadsheetId);
   }
 
   /**
-   * In one atomic batch, delete the rows holding `ids` and append `entities`.
-   * Row positions are read fresh under the rows lock, so rows added by other
-   * requests meanwhile are left alone, and a failure changes nothing.
+   * In one atomic batch, blank the rows holding `ids` and append `entities`.
+   * Rows added by other requests meanwhile are untouched, and a failure
+   * changes nothing.
    */
   async removeIdsAndAppend(
     spreadsheetId: string,
     ids: ReadonlySet<string>,
     entities: T[],
   ): Promise<void> {
-    await withRowsLock(spreadsheetId, async () => {
-      const sheets = await getSheetsClient();
-      const res = await sheets.spreadsheets.values.get({
-        spreadsheetId,
-        range: `${this.tab}!A2:A`,
-      });
-      const column = (res.data.values as string[][] | undefined) ?? [];
+    const rowIndexes = (await this.idColumn(spreadsheetId))
+      .map((id, i) => (id && ids.has(id) ? i + 1 : -1))
+      .filter((index) => index >= 0);
+    if (rowIndexes.length === 0 && entities.length === 0) return;
 
-      // 0-based sheet indexes (row 1 is the header), merged into contiguous
-      // runs and deleted bottom-up so earlier deletes don't shift later ones.
-      const indexes = column
-        .map((row, i) => (row?.[0] && ids.has(row[0]) ? i + 1 : -1))
-        .filter((index) => index >= 0);
-      const runs: { start: number; end: number }[] = [];
-      for (const index of indexes) {
-        const last = runs[runs.length - 1];
-        if (last && last.end === index) last.end = index + 1;
-        else runs.push({ start: index, end: index + 1 });
-      }
-      if (runs.length === 0 && entities.length === 0) return;
-
-      const sheetId = await getSheetId(spreadsheetId, this.tab);
-      markWritten(spreadsheetId);
-      await sheets.spreadsheets.batchUpdate({
-        spreadsheetId,
-        requestBody: {
-          requests: [
-            ...runs.reverse().map((run) => ({
-              deleteDimension: {
-                range: {
-                  sheetId,
-                  dimension: "ROWS",
-                  startIndex: run.start,
-                  endIndex: run.end,
-                },
-              },
-            })),
-            ...(entities.length > 0
-              ? [
-                  {
-                    appendCells: {
-                      sheetId,
-                      rows: entities.map((entity) => ({
-                        values: this.codec.toRow(entity).map(toCellData),
-                      })),
-                      fields: "userEnteredValue",
-                    },
-                  },
-                ]
-              : []),
-          ],
-        },
-      });
-      markWritten(spreadsheetId);
+    const sheetId = await getSheetId(spreadsheetId, this.tab);
+    const sheets = await getSheetsClient();
+    markWritten(spreadsheetId);
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          ...this.clearRowsRequests(sheetId, rowIndexes),
+          ...(entities.length > 0
+            ? [this.appendCellsRequest(sheetId, entities)]
+            : []),
+        ],
+      },
     });
+    markWritten(spreadsheetId);
+  }
+
+  /**
+   * For each of `ids` stored in more than one row, blank every copy but the
+   * first. Used after writes that two instances may both make (recurring
+   * posts, archive rollups): both pick the same rows to clear, so running it
+   * concurrently is safe.
+   */
+  async keepFirstOf(
+    spreadsheetId: string,
+    ids: ReadonlySet<string>,
+  ): Promise<number> {
+    if (ids.size === 0) return 0;
+    const seen = new Set<string>();
+    const duplicates: number[] = [];
+    (await this.idColumn(spreadsheetId)).forEach((id, i) => {
+      if (!id || !ids.has(id)) return;
+      if (seen.has(id)) duplicates.push(i + 1);
+      else seen.add(id);
+    });
+    if (duplicates.length === 0) return 0;
+
+    const sheetId = await getSheetId(spreadsheetId, this.tab);
+    const sheets = await getSheetsClient();
+    markWritten(spreadsheetId);
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: { requests: this.clearRowsRequests(sheetId, duplicates) },
+    });
+    markWritten(spreadsheetId);
+    return duplicates.length;
   }
 
   async update(
@@ -251,49 +242,82 @@ export class SheetRepository<T extends { id: string }> {
     id: string,
     patch: Partial<T>,
   ): Promise<T> {
-    return withRowsLock(spreadsheetId, async () => {
-      const entry = await this.findEntry(spreadsheetId, id);
-      if (!entry) throw AppError.notFound();
+    const entry = await this.findEntry(spreadsheetId, id);
+    if (!entry) throw AppError.notFound();
 
-      const merged = { ...entry.entity, ...patch, id } as T;
-      const sheets = await getSheetsClient();
-      await sheets.spreadsheets.values.update({
-        spreadsheetId,
-        range: `${this.tab}!A${entry.rowNumber}:${this.lastColumn}${entry.rowNumber}`,
-        valueInputOption: "USER_ENTERED",
-        requestBody: { values: [this.codec.toRow(merged)] },
-      });
-      markWritten(spreadsheetId);
-      return merged;
+    const merged = { ...entry.entity, ...patch, id } as T;
+    const sheets = await getSheetsClient();
+    markWritten(spreadsheetId);
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${this.tab}!A${entry.rowNumber}:${this.lastColumn}${entry.rowNumber}`,
+      // RAW: stored as sent, so user text is never turned into a formula.
+      valueInputOption: "RAW",
+      requestBody: { values: [this.codec.toRow(merged)] },
     });
+    markWritten(spreadsheetId);
+    return merged;
   }
 
+  /** Blank the record's row; see the class comment for why it isn't deleted. */
   async remove(spreadsheetId: string, id: string): Promise<void> {
-    await withRowsLock(spreadsheetId, async () => {
-      const entry = await this.findEntry(spreadsheetId, id);
-      if (!entry) throw AppError.notFound();
+    const entry = await this.findEntry(spreadsheetId, id);
+    if (!entry) throw AppError.notFound();
 
-      const sheetId = await getSheetId(spreadsheetId, this.tab);
-      const sheets = await getSheetsClient();
-      await sheets.spreadsheets.batchUpdate({
-        spreadsheetId,
-        requestBody: {
-          requests: [
-            {
-              deleteDimension: {
-                range: {
-                  sheetId,
-                  dimension: "ROWS",
-                  startIndex: entry.rowNumber - 1,
-                  endIndex: entry.rowNumber,
-                },
-              },
-            },
-          ],
-        },
-      });
-      markWritten(spreadsheetId);
+    const sheets = await getSheetsClient();
+    markWritten(spreadsheetId);
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId,
+      range: `${this.tab}!A${entry.rowNumber}:${this.lastColumn}${entry.rowNumber}`,
     });
+    markWritten(spreadsheetId);
+  }
+
+  /** Column A of every data row (index 0 = sheet row 2); "" for blank rows. */
+  private async idColumn(spreadsheetId: string): Promise<string[]> {
+    const sheets = await getSheetsClient();
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${this.tab}!A2:A`,
+    });
+    return ((res.data.values as string[][] | undefined) ?? []).map(
+      (row) => row?.[0] ?? "",
+    );
+  }
+
+  private appendCellsRequest(sheetId: number, entities: T[]) {
+    return {
+      appendCells: {
+        sheetId,
+        rows: entities.map((entity) => ({
+          values: this.codec.toRow(entity).map(toCellData),
+        })),
+        fields: "userEnteredValue",
+      },
+    };
+  }
+
+  /** Requests blanking the given 0-based sheet rows, merged into runs. */
+  private clearRowsRequests(sheetId: number, rowIndexes: number[]) {
+    const runs: { start: number; end: number }[] = [];
+    for (const index of [...rowIndexes].sort((a, b) => a - b)) {
+      const last = runs[runs.length - 1];
+      if (last && last.end === index) last.end = index + 1;
+      else runs.push({ start: index, end: index + 1 });
+    }
+    // updateCells with no row data and a field mask clears those values.
+    return runs.map((run) => ({
+      updateCells: {
+        range: {
+          sheetId,
+          startRowIndex: run.start,
+          endRowIndex: run.end,
+          startColumnIndex: 0,
+          endColumnIndex: this.columnCount,
+        },
+        fields: "userEnteredValue",
+      },
+    }));
   }
 
   /** Locate a record and the 1-based sheet row it occupies. */

@@ -14,13 +14,10 @@ import {
   getWorkspaceForCurrentUser,
   invalidateWorkspaceCache,
 } from "@/lib/google/workspace";
-import { generateId } from "@/lib/id";
 import { AppError } from "@/lib/errors";
-import {
-  withRowsLock,
-  type Cell,
-  type SheetRepository,
-} from "@/lib/google/repository";
+import { createHash } from "node:crypto";
+import { withLocalLock } from "@/lib/google/lock";
+import type { SheetRepository } from "@/lib/google/repository";
 import { expensesRepo, incomeRepo } from "@/lib/repositories";
 import type { ArchiveResult, ArchiveYearSummary } from "@/types/api";
 import type { CategoryKind, Expense, Income } from "@/types/domain";
@@ -196,30 +193,18 @@ async function ensureArchiveSpreadsheet(
   return existing;
 }
 
-async function appendArchivePayload(
+/** Informational per-run totals on the archive's Summary tab. */
+async function appendArchiveSummary(
   archiveId: string,
-  detailTab: string,
-  detailRows: Cell[][],
   summaryRows: (string | number)[][],
 ): Promise<void> {
-  const [detailStart, summaryStart] = await Promise.all([
-    nextEmptyRow(archiveId, detailTab),
-    nextEmptyRow(archiveId, ARCHIVE_SUMMARY_TAB),
-  ]);
-
+  const summaryStart = await nextEmptyRow(archiveId, ARCHIVE_SUMMARY_TAB);
   const sheets = await getSheetsClient();
-  await sheets.spreadsheets.values.batchUpdate({
+  await sheets.spreadsheets.values.update({
     spreadsheetId: archiveId,
-    requestBody: {
-      valueInputOption: "USER_ENTERED",
-      data: [
-        { range: `${detailTab}!A${detailStart}`, values: detailRows },
-        {
-          range: `${ARCHIVE_SUMMARY_TAB}!A${summaryStart}`,
-          values: summaryRows,
-        },
-      ],
-    },
+    range: `${ARCHIVE_SUMMARY_TAB}!A${summaryStart}`,
+    valueInputOption: "RAW",
+    requestBody: { values: summaryRows },
   });
 }
 
@@ -254,6 +239,20 @@ interface RollupBucket {
   accountId: string;
   categoryId: string;
   amount: number;
+  /** Ids of the detail rows folded into this bucket. */
+  ids: string[];
+}
+
+/**
+ * Rollup id derived from the rows it replaces, so two archive runs over the
+ * same rows produce the same id and `keepFirstOf` can drop the duplicate.
+ */
+function rollupId(bucket: RollupBucket): string {
+  const digest = createHash("sha256")
+    .update([...bucket.ids].sort().join(","))
+    .digest("hex")
+    .slice(0, 24);
+  return `rollup_${bucket.month}_${digest}`;
 }
 
 /**
@@ -272,12 +271,14 @@ function bucketByMonth<T extends Archiveable>(rows: T[]): RollupBucket[] {
     const existing = buckets.get(key);
     if (existing) {
       existing.amount += row.amount;
+      existing.ids.push(row.id);
     } else {
       buckets.set(key, {
         month,
         accountId: row.accountId,
         categoryId: row.categoryId,
         amount: row.amount,
+        ids: [row.id],
       });
     }
   }
@@ -290,7 +291,7 @@ function rollupExpenses(rows: Expense[], now: string): Expense[] {
     const total = round2(bucket.amount);
     if (total <= 0) continue;
     rollups.push({
-      id: generateId(),
+      id: rollupId(bucket),
       date: lastDayOfMonth(bucket.month),
       amount: total,
       categoryId: bucket.categoryId,
@@ -311,7 +312,7 @@ function rollupIncome(rows: Income[], now: string): Income[] {
     const total = round2(bucket.amount);
     if (total <= 0) continue;
     rollups.push({
-      id: generateId(),
+      id: rollupId(bucket),
       date: lastDayOfMonth(bucket.month),
       amount: total,
       categoryId: bucket.categoryId,
@@ -350,20 +351,21 @@ interface ArchiveTarget<T extends Archiveable> {
  * spreadsheet, then replace them in the live tab with per-account monthly
  * rollups so balances and cash flow stay intact.
  *
- * Safe to retry and to run alongside normal use:
- * - the whole run holds the rows lock, so edits and deletes wait for it and a
- *   second archive can't start;
+ * Safe to retry, to run twice at once and to run alongside normal use:
  * - rows already in the archive (from a run that failed half-way) are not
- *   copied again;
- * - the live tab is changed in one atomic batch that deletes only the archived
- *   rows, so entries added meanwhile survive and a failure changes nothing.
+ *   copied again, and copies made by two concurrent runs are de-duplicated;
+ * - the live tab is changed in one atomic batch that blanks only the archived
+ *   rows and adds the rollups, so entries added meanwhile survive and a
+ *   failure changes nothing;
+ * - rollup ids derive from the rows they replace, so concurrent runs produce
+ *   the same rollups and the duplicate is dropped.
  */
 export async function archiveTransactions(
   kind: CategoryKind,
 ): Promise<ArchiveResult> {
   const { spreadsheetId, rootFolderId } = await getWorkspaceForCurrentUser();
-  const result = await withRowsLock(
-    spreadsheetId,
+  const result = await withLocalLock(
+    `${spreadsheetId}:archive`,
     () =>
       kind === "expense"
         ? archiveInto(kind, spreadsheetId, rootFolderId, {
@@ -378,7 +380,6 @@ export async function archiveTransactions(
             tab: SHEET_TABS.income,
             rollup: rollupIncome,
           }),
-    { ttlMs: 5 * 60_000 },
   );
   invalidateWorkspaceCache();
   return result;
@@ -409,13 +410,15 @@ async function archiveInto<T extends Archiveable>(
     rootFolderId,
   );
 
+  // The archive's detail tab has the live tab's name and columns, so the
+  // same repository reads and writes it.
+  const archiveIds = new Set(toArchive.map((row) => row.id));
   const already = await archivedIds(archiveId, target.tab);
   const fresh = toArchive.filter((row) => !already.has(row.id));
   if (fresh.length > 0) {
-    await appendArchivePayload(
+    await target.repo.appendMany(archiveId, fresh);
+    await appendArchiveSummary(
       archiveId,
-      target.tab,
-      fresh.map((row) => target.repo.toRow(row)),
       yearSummaries(groupByYear(fresh)).map((year) => [
         year.year,
         year.total,
@@ -424,11 +427,12 @@ async function archiveInto<T extends Archiveable>(
       ]),
     );
   }
+  await target.repo.keepFirstOf(archiveId, archiveIds);
 
-  await target.repo.removeIdsAndAppend(
+  await target.repo.removeIdsAndAppend(spreadsheetId, archiveIds, rollups);
+  await target.repo.keepFirstOf(
     spreadsheetId,
-    new Set(toArchive.map((row) => row.id)),
-    rollups,
+    new Set(rollups.map((row) => row.id)),
   );
 
   return {
