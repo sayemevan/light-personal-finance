@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { MonitorSmartphone, X } from "lucide-react";
+import { Check, Copy, MonitorSmartphone, X } from "lucide-react";
 
 const DISMISSED_FLAG = "pf:desktop-mode-notice-dismissed";
 
@@ -52,23 +52,24 @@ function detectDesktopMode(): DesktopModeState | null {
   return { scale };
 }
 
-/** An Android intent link that opens the current page in Chrome, not the app. */
-function chromeIntentUrl(): string {
-  const { host, pathname, search, protocol, href } = window.location;
-  return (
-    `intent://${host}${pathname}${search}#Intent;` +
-    `scheme=${protocol.replace(":", "")};package=com.android.chrome;` +
-    `S.browser_fallback_url=${encodeURIComponent(href)};end`
-  );
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
  * Shown in the installed app when Chrome's "Desktop site" is on for this
- * site. The app can't change that setting, so this links to Chrome where the
- * user can untick it.
+ * site. The app can't change that setting, and links to the site from here
+ * (even intents aimed at Chrome) open back in the app. A URL typed into
+ * Chrome's address bar stays in Chrome, so hand over the link to paste.
  */
 export function DesktopModeNotice() {
   const [state, setState] = React.useState<DesktopModeState | null>(null);
+  const [copied, setCopied] = React.useState<boolean | null>(null);
 
   React.useEffect(() => {
     if (isDismissed()) return;
@@ -79,6 +80,10 @@ export function DesktopModeNotice() {
   }, []);
 
   if (!state) return null;
+
+  const siteUrl = `${window.location.origin}/dashboard`;
+
+  const copyLink = async () => setCopied(await copyText(siteUrl));
 
   const dismiss = () => {
     markDismissed();
@@ -97,21 +102,41 @@ export function DesktopModeNotice() {
         <MonitorSmartphone className="mt-0.5 h-5 w-5 shrink-0" aria-hidden />
         <div className="min-w-0 flex-1 space-y-2 text-sm">
           <p className="font-medium">Desktop site is on</p>
-          <p className="text-amber-900 dark:text-amber-200">
-            Chrome is showing the desktop layout. Open this page in Chrome,
-            untick <span className="font-medium">⋮ → Desktop site</span>, then
-            come back to the app.
-          </p>
-          <a
-            href="#"
-            // Built on tap so it points at the page the user is on now.
-            onClick={(event) => {
-              event.currentTarget.href = chromeIntentUrl();
-            }}
-            className="inline-flex h-9 items-center rounded-md bg-amber-500 px-4 text-sm font-medium text-amber-950 hover:bg-amber-400"
-          >
-            Open in Chrome
-          </a>
+          <ol className="list-decimal space-y-1 pl-5 text-amber-900 dark:text-amber-200">
+            <li>Copy the link below.</li>
+            <li>
+              Open the <span className="font-medium">Chrome</span> app and
+              paste it into the address bar.
+            </li>
+            <li>
+              Untick <span className="font-medium">⋮ → Desktop site</span>.
+            </li>
+            <li>Come back to this app.</li>
+          </ol>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void copyLink()}
+              className="inline-flex h-9 items-center gap-2 rounded-md bg-amber-500 px-4 text-sm font-medium text-amber-950 hover:bg-amber-400"
+            >
+              {copied ? (
+                <Check className="h-4 w-4" aria-hidden />
+              ) : (
+                <Copy className="h-4 w-4" aria-hidden />
+              )}
+              {copied ? "Link copied" : "Copy link"}
+            </button>
+            {/* Shown always so it can be copied by hand if the clipboard is blocked. */}
+            <span className="select-all break-all font-mono text-xs">
+              {siteUrl}
+            </span>
+          </div>
+          {copied === false ? (
+            <p className="text-xs">
+              Couldn&apos;t copy automatically — press and hold the link to
+              copy it.
+            </p>
+          ) : null}
         </div>
         <button
           type="button"
