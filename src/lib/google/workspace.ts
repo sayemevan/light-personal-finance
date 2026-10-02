@@ -1,10 +1,15 @@
 import "server-only";
+import { cookies } from "next/headers";
 import { auth } from "@/auth";
 import { getSheetsClient, getDriveClient } from "@/lib/google/client";
 import {
   findFolder,
   createFolder,
   findSpreadsheet,
+  isLiveFile,
+  listFolders,
+  listSpreadsheets,
+  trashFile,
 } from "@/lib/google/drive";
 import {
   DRIVE_STRUCTURE,
@@ -41,38 +46,81 @@ const workspaceCache = new Map<string, { value: FinanceWorkspace; ts: number }>(
 const inflight = new Map<string, Promise<FinanceWorkspace>>();
 
 /**
+ * Browser cookie pinning the resolved workspace ids. Serverless requests land
+ * on different instances, and Drive search can miss a file created moments
+ * earlier, so an instance that only searched could create (and then write to)
+ * a second Finance spreadsheet. With the ids pinned, every request from the
+ * browser uses the same files. The ids grant nothing without the user's OAuth
+ * token.
+ */
+const WORKSPACE_COOKIE = "pf_workspace";
+const WORKSPACE_COOKIE_MAX_AGE = 365 * 24 * 60 * 60;
+
+/**
  * Idempotently ensure the Drive folder structure and Finance spreadsheet exist,
  * creating and seeding them on first run and reusing them thereafter.
  */
 export async function ensureFinanceWorkspace(): Promise<FinanceWorkspace> {
-  const rootFolderId =
-    (await findFolder(DRIVE_STRUCTURE.rootFolder)) ??
-    (await createFolder(DRIVE_STRUCTURE.rootFolder));
-
-  const receiptsFolderId =
-    (await findFolder(DRIVE_STRUCTURE.receiptsFolder, rootFolderId)) ??
-    (await createFolder(DRIVE_STRUCTURE.receiptsFolder, rootFolderId));
-
-  const reportsFolderId =
-    (await findFolder(DRIVE_STRUCTURE.reportsFolder, rootFolderId)) ??
-    (await createFolder(DRIVE_STRUCTURE.reportsFolder, rootFolderId));
+  const rootFolderId = await findOrCreateFolder(DRIVE_STRUCTURE.rootFolder);
+  const receiptsFolderId = await findOrCreateFolder(
+    DRIVE_STRUCTURE.receiptsFolder,
+    rootFolderId,
+  );
+  const reportsFolderId = await findOrCreateFolder(
+    DRIVE_STRUCTURE.reportsFolder,
+    rootFolderId,
+  );
 
   let spreadsheetId = await findSpreadsheet(
     DRIVE_STRUCTURE.spreadsheet,
     rootFolderId,
   );
   if (!spreadsheetId) {
-    spreadsheetId = await createFinanceSpreadsheet(rootFolderId);
-  } else if (!migrated.has(spreadsheetId)) {
-    // Non-destructive migration: make sure tabs added in later schema versions
-    // exist, and that existing tabs have any columns appended since they were
-    // created (e.g. accountId on Loan Payments).
-    await ensureSheetTabs(spreadsheetId);
-    await ensureSheetHeaders(spreadsheetId);
-    migrated.add(spreadsheetId);
+    const created = await createFinanceSpreadsheet(rootFolderId);
+    spreadsheetId = await adoptOldest(created, () =>
+      listSpreadsheets(DRIVE_STRUCTURE.spreadsheet, rootFolderId),
+    );
+    migrated.add(created);
   }
+  await migrateOnce(spreadsheetId);
 
   return { rootFolderId, spreadsheetId, receiptsFolderId, reportsFolderId };
+}
+
+async function findOrCreateFolder(
+  name: string,
+  parentId?: string,
+): Promise<string> {
+  const existing = await findFolder(name, parentId);
+  if (existing) return existing;
+  const created = await createFolder(name, parentId);
+  return adoptOldest(created, () => listFolders(name, parentId));
+}
+
+/**
+ * After creating a file, check whether another instance created one too and
+ * converge on the oldest: trash ours (it is new and empty) and use theirs.
+ */
+async function adoptOldest(
+  created: string,
+  list: () => Promise<string[]>,
+): Promise<string> {
+  const oldest = (await list())[0];
+  if (!oldest || oldest === created) return created;
+  await trashFile(created).catch(() => undefined);
+  return oldest;
+}
+
+/**
+ * Non-destructive migration: make sure tabs added in later schema versions
+ * exist, and that existing tabs have any columns appended since they were
+ * created (e.g. accountId on Loan Payments).
+ */
+async function migrateOnce(spreadsheetId: string): Promise<void> {
+  if (migrated.has(spreadsheetId)) return;
+  await ensureSheetTabs(spreadsheetId);
+  await ensureSheetHeaders(spreadsheetId);
+  migrated.add(spreadsheetId);
 }
 
 /**
@@ -196,25 +244,99 @@ export async function getWorkspaceForCurrentUser(): Promise<FinanceWorkspace> {
   const userKey = session?.user?.id || session?.user?.email;
   if (!userKey) throw AppError.unauthenticated();
 
+  const cookieStore = await cookies();
+  const pinned = readPinned(cookieStore.get(WORKSPACE_COOKIE)?.value, userKey);
+
   const cached = workspaceCache.get(userKey);
-  if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
-    return cached.value;
+  let workspace: FinanceWorkspace;
+  if (
+    cached &&
+    Date.now() - cached.ts < CACHE_TTL_MS &&
+    (!pinned || pinned.spreadsheetId === cached.value.spreadsheetId)
+  ) {
+    workspace = cached.value;
+  } else {
+    // Share one resolve per user: the dashboard fires many requests at once,
+    // and on a fresh account each would otherwise create its own folder and
+    // spreadsheet.
+    const key = `${userKey}:${pinned?.spreadsheetId ?? ""}`;
+    let pending = inflight.get(key);
+    if (!pending) {
+      pending = resolveWorkspace(pinned)
+        .then((value) => {
+          workspaceCache.set(userKey, { value, ts: Date.now() });
+          return value;
+        })
+        .finally(() => inflight.delete(key));
+      inflight.set(key, pending);
+    }
+    workspace = await pending;
   }
 
-  // Share one find-or-create per user: the dashboard fires many requests at
-  // once, and on a fresh account each would otherwise create its own folder
-  // and spreadsheet.
-  let pending = inflight.get(userKey);
-  if (!pending) {
-    pending = ensureFinanceWorkspace()
-      .then((workspace) => {
-        workspaceCache.set(userKey, { value: workspace, ts: Date.now() });
-        return workspace;
-      })
-      .finally(() => inflight.delete(userKey));
-    inflight.set(userKey, pending);
+  if (!sameWorkspace(pinned, workspace)) {
+    try {
+      cookieStore.set(WORKSPACE_COOKIE, JSON.stringify({ u: userKey, ...workspace }), {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: WORKSPACE_COOKIE_MAX_AGE,
+      });
+    } catch {
+      // Server components can't set cookies; the next API request will.
+    }
   }
-  return pending;
+  return workspace;
+}
+
+/** Use the pinned ids while the spreadsheet still exists; otherwise search. */
+async function resolveWorkspace(
+  pinned: FinanceWorkspace | null,
+): Promise<FinanceWorkspace> {
+  if (pinned && (await isLiveFile(pinned.spreadsheetId))) {
+    await migrateOnce(pinned.spreadsheetId);
+    return pinned;
+  }
+  return ensureFinanceWorkspace();
+}
+
+function readPinned(
+  raw: string | undefined,
+  userKey: string,
+): FinanceWorkspace | null {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as Partial<FinanceWorkspace> & { u?: string };
+    if (
+      value.u !== userKey ||
+      !value.rootFolderId ||
+      !value.spreadsheetId ||
+      !value.receiptsFolderId ||
+      !value.reportsFolderId
+    ) {
+      return null;
+    }
+    return {
+      rootFolderId: value.rootFolderId,
+      spreadsheetId: value.spreadsheetId,
+      receiptsFolderId: value.receiptsFolderId,
+      reportsFolderId: value.reportsFolderId,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function sameWorkspace(
+  a: FinanceWorkspace | null,
+  b: FinanceWorkspace,
+): boolean {
+  return (
+    a?.rootFolderId === b.rootFolderId &&
+    a.spreadsheetId === b.spreadsheetId &&
+    a.receiptsFolderId === b.receiptsFolderId &&
+    a.reportsFolderId === b.reportsFolderId
+  );
 }
 
 /** Convenience accessor returning just the spreadsheet id. */

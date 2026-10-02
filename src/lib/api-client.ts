@@ -24,6 +24,27 @@ export class ApiClientError extends Error {
   }
 }
 
+let workspaceReady: Promise<void> | null = null;
+
+/**
+ * Resolve the Drive workspace once per page load, before any data request.
+ * The bootstrap creates the Finance spreadsheet on first sign-in and pins its
+ * id in a cookie; without it, parallel requests on different server instances
+ * could each create (and write to) their own spreadsheet. A failure (e.g.
+ * offline) doesn't block the request and is retried on the next one.
+ */
+function ensureWorkspaceReady(): Promise<void> {
+  if (isOffline()) return Promise.resolve();
+  workspaceReady ??= fetch("/api/bootstrap", { method: "POST" })
+    .then((res) => {
+      if (!res.ok) workspaceReady = null;
+    })
+    .catch(() => {
+      workspaceReady = null;
+    });
+  return workspaceReady;
+}
+
 /**
  * Thin fetch wrapper that unwraps the `{ ok, data | error }` envelope and
  * throws a typed `ApiClientError` on failure. All client data hooks use this.
@@ -50,6 +71,8 @@ export async function apiFetch<T>(
     const placeholder = queueOffline<T>(method, path, init?.body, tempId);
     if (placeholder.queued) return placeholder.value;
   }
+
+  await ensureWorkspaceReady();
 
   let res: Response;
   try {
@@ -132,6 +155,7 @@ export async function uploadReceiptFile(
 ): Promise<{ fileId: string }> {
   const form = new FormData();
   form.append("file", file);
+  await ensureWorkspaceReady();
   const res = await fetch("/api/receipts", { method: "POST", body: form });
   let json: ApiResponse<{ fileId: string }>;
   try {

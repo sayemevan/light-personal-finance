@@ -10,15 +10,22 @@ import { getDriveClient } from "@/lib/google/client";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 const SPREADSHEET_MIME = "application/vnd.google-apps.spreadsheet";
 
-/** Find a folder by name within an optional parent. Returns its id or null. */
-export async function findFolder(
+/**
+ * Ids of the non-trashed files with this name and type, oldest first, so any
+ * duplicates always resolve to the same original. Drive search is eventually
+ * consistent: a file created moments ago (possibly by another server
+ * instance) may be missing from the result.
+ */
+async function listByName(
   name: string,
+  mimeType: string,
   parentId?: string,
-): Promise<string | null> {
+  pageSize = 10,
+): Promise<string[]> {
   const drive = await getDriveClient();
   const query = [
     `name = '${name.replace(/'/g, "\\'")}'`,
-    `mimeType = '${FOLDER_MIME}'`,
+    `mimeType = '${mimeType}'`,
     "trashed = false",
     parentId ? `'${parentId}' in parents` : undefined,
   ]
@@ -27,13 +34,30 @@ export async function findFolder(
 
   const res = await drive.files.list({
     q: query,
-    fields: "files(id, name)",
+    fields: "files(id)",
     spaces: "drive",
-    // Oldest first, so any duplicates always resolve to the same original.
     orderBy: "createdTime",
-    pageSize: 1,
+    pageSize,
   });
-  return res.data.files?.[0]?.id ?? null;
+  return (res.data.files ?? [])
+    .map((file) => file.id)
+    .filter((id): id is string => Boolean(id));
+}
+
+/** Find a folder by name within an optional parent. Returns its id or null. */
+export async function findFolder(
+  name: string,
+  parentId?: string,
+): Promise<string | null> {
+  return (await listByName(name, FOLDER_MIME, parentId, 1))[0] ?? null;
+}
+
+/** Every folder with this name within an optional parent, oldest first. */
+export async function listFolders(
+  name: string,
+  parentId?: string,
+): Promise<string[]> {
+  return listByName(name, FOLDER_MIME, parentId);
 }
 
 /** Create a folder under an optional parent and return its id. */
@@ -61,21 +85,42 @@ export async function findSpreadsheet(
   name: string,
   parentId: string,
 ): Promise<string | null> {
+  return (await listByName(name, SPREADSHEET_MIME, parentId, 1))[0] ?? null;
+}
+
+/** Every spreadsheet with this name within a parent folder, oldest first. */
+export async function listSpreadsheets(
+  name: string,
+  parentId: string,
+): Promise<string[]> {
+  return listByName(name, SPREADSHEET_MIME, parentId);
+}
+
+/**
+ * Whether a file still exists and is not in the trash. Unlike search, a
+ * lookup by id is strongly consistent.
+ */
+export async function isLiveFile(fileId: string): Promise<boolean> {
   const drive = await getDriveClient();
-  const res = await drive.files.list({
-    q: [
-      `name = '${name.replace(/'/g, "\\'")}'`,
-      `mimeType = '${SPREADSHEET_MIME}'`,
-      `'${parentId}' in parents`,
-      "trashed = false",
-    ].join(" and "),
-    fields: "files(id, name)",
-    spaces: "drive",
-    // Oldest first, so any duplicates always resolve to the same original.
-    orderBy: "createdTime",
-    pageSize: 1,
+  try {
+    const res = await drive.files.get({ fileId, fields: "id, trashed" });
+    return res.data.trashed !== true;
+  } catch (error) {
+    const status = (error as { code?: number; status?: number }).code ??
+      (error as { status?: number }).status;
+    if (status === 404) return false;
+    throw error;
+  }
+}
+
+/** Move a file to the Drive trash (recoverable by the user for 30 days). */
+export async function trashFile(fileId: string): Promise<void> {
+  const drive = await getDriveClient();
+  await drive.files.update({
+    fileId,
+    requestBody: { trashed: true },
+    fields: "id",
   });
-  return res.data.files?.[0]?.id ?? null;
 }
 
 /** Metadata for a stored receipt. */
