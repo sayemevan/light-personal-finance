@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, Copy, MonitorSmartphone, X } from "lucide-react";
+import { MonitorSmartphone, X } from "lucide-react";
 
 const DISMISSED_FLAG = "pf:desktop-mode-notice-dismissed";
 
@@ -96,48 +96,25 @@ export function DesktopModeNotice() {
       // The page is zoomed out to fit a desktop layout; zoom just this
       // notice back up so it reads at normal phone size.
       style={{ zoom: Math.min(1 / state.scale, 4) }}
-      className="border-b bg-amber-50 px-4 py-3 text-amber-950 dark:bg-amber-950 dark:text-amber-50"
+      className="border-b bg-amber-50 px-4 py-2 text-amber-950 dark:bg-amber-950 dark:text-amber-50"
     >
-      <div className="flex items-start gap-3">
-        <MonitorSmartphone className="mt-0.5 h-5 w-5 shrink-0" aria-hidden />
-        <div className="min-w-0 flex-1 space-y-2 text-sm">
-          <p className="font-medium">Desktop site is on</p>
-          <ol className="list-decimal space-y-1 pl-5 text-amber-900 dark:text-amber-200">
-            <li>Copy the link below.</li>
-            <li>
-              Open the <span className="font-medium">Chrome</span> app and
-              paste it into the address bar.
-            </li>
-            <li>
-              Untick <span className="font-medium">⋮ → Desktop site</span>.
-            </li>
-            <li>Come back to this app.</li>
-          </ol>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => void copyLink()}
-              className="inline-flex h-9 items-center gap-2 rounded-md bg-amber-500 px-4 text-sm font-medium text-amber-950 hover:bg-amber-400"
-            >
-              {copied ? (
-                <Check className="h-4 w-4" aria-hidden />
-              ) : (
-                <Copy className="h-4 w-4" aria-hidden />
-              )}
-              {copied ? "Link copied" : "Copy link"}
-            </button>
-            {/* Shown always so it can be copied by hand if the clipboard is blocked. */}
-            <span className="select-all break-all font-mono text-xs">
-              {siteUrl}
-            </span>
-          </div>
-          {copied === false ? (
-            <p className="text-xs">
-              Couldn&apos;t copy automatically — press and hold the link to
-              copy it.
-            </p>
-          ) : null}
-        </div>
+      <div className="flex items-center gap-3">
+        <MonitorSmartphone className="h-5 w-5 shrink-0" aria-hidden />
+        <p className="min-w-0 flex-1 text-sm">
+          <span className="font-medium">Desktop site is on.</span>{" "}
+          <button
+            type="button"
+            onClick={() => void copyLink()}
+            className="font-medium underline underline-offset-2"
+          >
+            {copied === null
+              ? "Copy link"
+              : copied
+                ? "Link copied"
+                : "Couldn't copy"}
+          </button>
+          , open it in Chrome and untick ⋮ → Desktop site.
+        </p>
         <button
           type="button"
           onClick={dismiss}
