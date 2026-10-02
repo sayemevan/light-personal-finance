@@ -60,7 +60,7 @@ export async function createLoan(input: CreateLoanInput): Promise<Loan> {
     id: generateId(),
     type: input.type,
     person: input.person,
-    accountId: input.accountId,
+    accountId: input.existing ? undefined : input.accountId,
     principal: input.principal,
     interestRate: input.interestRate,
     borrowDate: input.borrowDate,
@@ -96,8 +96,11 @@ export async function updateLoan(
   // freeze it. Only "active" and a manual "settled" are saved.
   const status =
     input.status === "overdue" ? ("active" as const) : input.status;
-  const patch: Partial<Loan> = { ...input, status, dueDate: input.dueDate || undefined };
+  const { existing, ...fields } = input;
+  const patch: Partial<Loan> = { ...fields, status, dueDate: input.dueDate || undefined };
   if (input.dueDate === undefined) delete patch.dueDate;
+  // A previous loan has no account, so it never changes a balance.
+  if (existing) patch.accountId = undefined;
   if (input.status === undefined) delete patch.status;
   // 0 means "no interest"; store it as empty.
   if (input.interestRate === 0) patch.interestRate = undefined;

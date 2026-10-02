@@ -105,7 +105,8 @@ export default function LoansPage() {
         id: "account",
         mobile: "hidden",
         header: "Account",
-        cell: (row) => (row.accountId ? accountName(row.accountId) : "—"),
+        cell: (row) =>
+          row.accountId ? accountName(row.accountId) : "Previous loan",
         sortValue: (row) => (row.accountId ? accountName(row.accountId) : ""),
       },
       {

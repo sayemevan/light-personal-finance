@@ -236,10 +236,16 @@ export const updateCategorySchema = createCategorySchema
   .partial()
   .extend({ isArchived: z.boolean().optional() });
 
-export const createLoanSchema = z.object({
+const loanSchema = z.object({
   type: loanTypeSchema,
   person: z.string().trim().min(1).max(120),
-  accountId: z.string().min(1, "Select an account"),
+  /** Required unless `existing`. */
+  accountId: z.string().optional(),
+  /**
+   * A loan taken or given before using the app: recorded without an account,
+   * so it doesn't change any account balance.
+   */
+  existing: z.boolean().optional(),
   principal: amount,
   interestRate: z.coerce.number().min(0).max(1000).optional(),
   borrowDate: isoDate,
@@ -248,7 +254,20 @@ export const createLoanSchema = z.object({
   status: loanStatusSchema.default("active"),
   notes: optionalText,
 });
-export const updateLoanSchema = createLoanSchema.partial();
+
+const missingLoanAccount: z.IssueData = {
+  code: z.ZodIssueCode.custom,
+  path: ["accountId"],
+  message: "Select an account",
+};
+
+export const createLoanSchema = loanSchema.superRefine((value, ctx) => {
+  if (!value.existing && !value.accountId) ctx.addIssue(missingLoanAccount);
+});
+/** An edit may leave the account untouched (undefined) but not blank it. */
+export const updateLoanSchema = loanSchema.partial().superRefine((value, ctx) => {
+  if (!value.existing && value.accountId === "") ctx.addIssue(missingLoanAccount);
+});
 
 export const createLoanPaymentSchema = z.object({
   loanId: z.string().min(1),

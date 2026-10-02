@@ -54,6 +54,7 @@ export function LoanFormDialog({
       type: "borrowed",
       person: "",
       accountId: "",
+      existing: false,
       principal: undefined,
       interestRate: undefined,
       borrowDate: today(),
@@ -65,6 +66,7 @@ export function LoanFormDialog({
 
   const loanType = form.watch("type");
   const isLent = loanType === "lent";
+  const existing = form.watch("existing") ?? false;
   const accountLabel = isLent ? "Take from account" : "Add to account";
   const accountDescription = isLent
     ? "The amount you lend is deducted from this account."
@@ -78,6 +80,7 @@ export function LoanFormDialog({
             type: loan.type,
             person: loan.person,
             accountId: loan.accountId ?? "",
+            existing: !loan.accountId,
             principal: loan.principal,
             interestRate: loan.interestRate,
             borrowDate: loan.borrowDate,
@@ -93,6 +96,7 @@ export function LoanFormDialog({
             type: "borrowed",
             person: "",
             accountId: "",
+            existing: false,
             principal: undefined,
             interestRate: undefined,
             borrowDate: today(),
@@ -172,14 +176,34 @@ export function LoanFormDialog({
               label="Person / Institution"
               placeholder="Who is it with?"
             />
-            <SelectField
-              control={form.control}
-              name="accountId"
-              label={accountLabel}
-              placeholder="Select account"
-              description={accountDescription}
-              options={accountOptions}
-            />
+            <label className="flex cursor-pointer items-start gap-3 rounded-md border p-3">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-5 w-5 shrink-0 accent-primary"
+                checked={existing}
+                onChange={(event) => {
+                  form.setValue("existing", event.target.checked);
+                  if (event.target.checked) form.clearErrors("accountId");
+                }}
+              />
+              <span className="space-y-0.5">
+                <span className="block text-sm font-medium">Previous loan</span>
+                <span className="block text-xs text-muted-foreground">
+                  Taken or given before you started using the app. No account
+                  balance is changed.
+                </span>
+              </span>
+            </label>
+            {existing ? null : (
+              <SelectField
+                control={form.control}
+                name="accountId"
+                label={accountLabel}
+                placeholder="Select account"
+                description={accountDescription}
+                options={accountOptions}
+              />
+            )}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <NumberField
                 control={form.control}
