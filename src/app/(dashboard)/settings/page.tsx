@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { Archive, Bell, FolderSync, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -286,21 +285,6 @@ export default function SettingsPage() {
               </Button>
             </div>
           </div>
-        </CardContent>
-      </Card>
-
-      {/* TEMPORARY: entry point for the open-in-Chrome experiment. */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Open in Chrome test</CardTitle>
-          <CardDescription>
-            Temporary. Open this from the installed app.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button asChild variant="outline">
-            <Link href="/open-in-chrome-test">Open test page</Link>
-          </Button>
         </CardContent>
       </Card>
 
