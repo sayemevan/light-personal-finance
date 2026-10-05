@@ -10,7 +10,11 @@ import {
   monthKey,
   sumOwnedAssetValue,
 } from "@/lib/finance";
-import type { DashboardSummary, Transaction } from "@/types/domain";
+import type {
+  AccountType,
+  DashboardSummary,
+  Transaction,
+} from "@/types/domain";
 
 const RECENT_LIMIT = 8;
 const UPCOMING_LIMIT = 5;
@@ -24,9 +28,24 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
   const currentMonth = monthKey(new Date().toISOString());
   const todayISO = new Date().toISOString().slice(0, 10);
 
+  const balanceByType: Record<AccountType, number> = {
+    cash: 0,
+    bank: 0,
+    credit_card: 0,
+    mobile_banking: 0,
+    custom: 0,
+  };
+  for (const account of accounts) {
+    const type = account.type in balanceByType ? account.type : "custom";
+    balanceByType[type] += computeAccountBalance(account, ledger);
+  }
+  for (const type of Object.keys(balanceByType) as AccountType[]) {
+    balanceByType[type] = Number(balanceByType[type].toFixed(2));
+  }
+
   const totalBalance = Number(
-    accounts
-      .reduce((sum, account) => sum + computeAccountBalance(account, ledger), 0)
+    Object.values(balanceByType)
+      .reduce((sum, balance) => sum + balance, 0)
       .toFixed(2),
   );
 
@@ -99,6 +118,7 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
 
   return {
     totalBalance,
+    balanceByType,
     monthExpense,
     monthIncome,
     savings: monthIncome - monthExpense,

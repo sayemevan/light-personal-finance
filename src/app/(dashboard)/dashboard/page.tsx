@@ -4,9 +4,12 @@ import Link from "next/link";
 import {
   ArrowDownRight,
   ArrowUpRight,
+  Banknote,
   CalendarClock,
   ChevronRight,
+  Landmark,
   PiggyBank,
+  Smartphone,
   TrendingDown,
   TrendingUp,
 } from "lucide-react";
@@ -43,6 +46,11 @@ function DashboardSkeleton() {
   return (
     <div className="space-y-4 md:space-y-6">
       <Skeleton className="h-40 rounded-2xl" />
+      <div className="grid grid-cols-3 gap-3 sm:gap-4">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <Skeleton key={index} className="h-20 rounded-xl" />
+        ))}
+      </div>
       <div className="grid grid-cols-3 gap-3 sm:gap-4">
         {Array.from({ length: 3 }).map((_, index) => (
           <Skeleton key={index} className="h-24 rounded-xl" />
@@ -101,6 +109,59 @@ function NetWorthCard({
   );
 }
 
+/** Balance held in each kind of account: cash, bank and mobile banking. */
+function AccountBalances({
+  data,
+  currency,
+}: {
+  data: DashboardSummary;
+  currency: string;
+}) {
+  const items = [
+    { label: "Cash", value: data.balanceByType.cash, icon: Banknote },
+    { label: "Bank", value: data.balanceByType.bank, icon: Landmark },
+    {
+      label: "Mobile banking",
+      value: data.balanceByType.mobile_banking,
+      icon: Smartphone,
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-3 gap-3 sm:gap-4">
+      {items.map(({ label, value, icon: Icon }) => (
+        <Link key={label} href="/accounts" className="block">
+          <Card className="h-full transition-colors active:bg-accent sm:hover:bg-accent/50">
+            <CardContent className="p-3 sm:p-5">
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                <p className="truncate text-xs font-medium sm:text-sm">{label}</p>
+              </div>
+              <p
+                className={cn(
+                  "mt-1.5 text-base font-semibold tracking-tight sm:hidden",
+                  value < 0 && "text-red-600 dark:text-red-400",
+                )}
+                title={formatCurrency(value, currency)}
+              >
+                {formatCompactCurrency(value, currency)}
+              </p>
+              <p
+                className={cn(
+                  "mt-1.5 hidden break-words text-xl font-semibold tracking-tight sm:block lg:text-2xl",
+                  value < 0 && "text-red-600 dark:text-red-400",
+                )}
+              >
+                {formatCurrency(value, currency)}
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const dashboardQuery = useDashboard();
   const { categoryName, accountName } = useLookups();
@@ -118,6 +179,7 @@ export default function DashboardPage() {
         {(data) => (
           <div className="space-y-4 md:space-y-6">
             <NetWorthCard data={data} currency={currency} />
+            <AccountBalances data={data} currency={currency} />
 
             {/* Phones: one compact "this month" strip. Larger: stat cards. */}
             <Card className="sm:hidden">

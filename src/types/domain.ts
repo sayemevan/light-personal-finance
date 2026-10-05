@@ -312,6 +312,8 @@ export interface Asset {
 
 export interface DashboardSummary {
   totalBalance: number;
+  /** Combined current balance of the accounts of each type. */
+  balanceByType: Record<AccountType, number>;
   monthExpense: number;
   monthIncome: number;
   savings: number;
